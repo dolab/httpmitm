@@ -6,7 +6,7 @@ HTTP mock framework for golang.
 - httpmitm treats request *URL* in case-insensitive
 
 ## Usage
-```golang
+```go
 import (
     "testing"
 
