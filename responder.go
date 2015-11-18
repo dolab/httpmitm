@@ -118,6 +118,11 @@ func (rr *Responder) RoundTrip(r *http.Request) (*http.Response, error) {
 		Body:       ioutil.NopCloser(bytes.NewBuffer(rr.body)),
 	}
 
+	// adjust response content length
+	contentLength := len(rr.body)
+	response.ContentLength = int64(contentLength)
+	response.Header.Set("Content-Length", strconv.Itoa(contentLength))
+
 	return response, nil
 }
 
