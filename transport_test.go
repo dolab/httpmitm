@@ -206,3 +206,33 @@ func Test_MitmTransportMissMatched(t *testing.T) {
 	// mt.MockRequest("GET", "http://example.com").WithResponse(101, nil, "GET OK").Times(1)
 	// mt.MockRequest("PUT", "http://example.com").WithResponse(101, nil, "GET OK").Times(1)
 }
+
+func Test_MitmTransportPauseAndResume(t *testing.T) {
+	assertion := assert.New(t)
+
+	mt := NewMitmTransport()
+	mt.StubDefaultTransport(t)
+	defer mt.UnstubDefaultTransport()
+
+	// mocks
+	mt.MockRequest("GET", "https://github.com").WithResponse(101, nil, "GET OK").AnyTimes()
+
+	// response with mocked
+	response, err := http.Get("mitm://github.com")
+	assertion.Nil(err)
+	assertion.Equal(101, response.StatusCode)
+
+	// paused and response with real github server
+	mt.Pause()
+
+	response, err = http.Get("mitm://github.com")
+	assertion.Nil(err)
+	assertion.Equal(200, response.StatusCode)
+
+	// resume and response with mock again
+	mt.Resume()
+
+	response, err = http.Get("mitm://github.com")
+	assertion.Nil(err)
+	assertion.Equal(101, response.StatusCode)
+}

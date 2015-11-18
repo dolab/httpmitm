@@ -31,6 +31,7 @@ type MitmTransport struct {
 	lastMockedTimes  int
 	lastMockedScheme string
 	stubbed          bool
+	paused           bool
 	testing          *testing.T
 }
 
@@ -41,6 +42,7 @@ func NewMitmTransport() *MitmTransport {
 		lastMockedKey:   "",
 		lastMockedTimes: MockDefaultTimes,
 		stubbed:         false,
+		paused:          false,
 	}
 }
 
@@ -74,18 +76,32 @@ func (mt *MitmTransport) UnstubDefaultTransport() {
 		http.DefaultTransport = httpDefaultResponder
 	}
 
-	for key, response := range mt.mockedResponses {
-		// does not match invoke?
-		if !response.MatchTimes() {
+	// does times miss match?
+	if !mt.paused {
+		errlogs := []string{}
+		for key, response := range mt.mockedResponses {
+			if !response.MatchTimes() {
+				expected, invoked := response.Times()
+
+				errlogs = append(errlogs, "        Error Trace:    %s:%d\n        Error:          Expected request "+key+" with "+fmt.Sprintf("%d", expected)+" times, but got "+fmt.Sprintf("%d", invoked)+" times\n\n")
+			}
+		}
+
+		if len(errlogs) > 0 {
+			pcs := make([]uintptr, 1)
+			runtime.Callers(2, pcs)
+
+			pcfunc := runtime.FuncForPC(pcs[0])
+			pcfile, pcline := pcfunc.FileLine(pcs[0])
+			pcname := filepath.Base(pcfile)
+
+			// format errlogs
+			for i, errlog := range errlogs {
+				errlogs[i] = fmt.Sprintf(errlog, pcname, pcline)
+			}
+
+			fmt.Printf("--- FAIL: %s\n%s", pcfunc.Name(), strings.Join(errlogs, "\n"))
 			mt.testing.Fail()
-
-			_, file, line, _ := runtime.Caller(1)
-			expected, invoked := response.Times()
-
-			fmt.Printf(`        Error Trace:    %s:%d
-        Error:          Expected invoke %s with %d times, but got %d times
-
-`, filepath.Base(file), line, key, expected, invoked)
 		}
 	}
 
@@ -211,6 +227,10 @@ func (mt *MitmTransport) WithXmlResponse(code int, header http.Header, body inte
 	return mt.WithResponser(NewXmlResponder(code, header, body))
 }
 
+func (mt *MitmTransport) WithBsonResponse(code int, header http.Header, body interface{}) *MitmTransport {
+	return mt.WithResponser(NewBsonResponder(code, header, body))
+}
+
 func (mt *MitmTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	// direct connect for none mitm scheme
 	if strings.ToLower(r.URL.Scheme) != MockScheme {
@@ -229,6 +249,13 @@ func (mt *MitmTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	}
 
 	if ok {
+		// direct connect for paused
+		if mt.paused {
+			r.URL.Scheme = response.scheme
+
+			return httpDefaultResponder.RoundTrip(r)
+		}
+
 		return response.RoundTrip(r)
 	}
 
@@ -242,4 +269,22 @@ func (mt *MitmTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 // TODO: what's timeout behavior?
 func (mt *MitmTransport) CancelRequest(r *http.Request) {
 
+}
+
+// Pause pauses mock for all requests
+func (mt *MitmTransport) Pause() {
+	mt.mux.Lock()
+	if mt.stubbed {
+		mt.paused = true
+	}
+	mt.mux.Unlock()
+}
+
+// Resume resumes mock again
+func (mt *MitmTransport) Resume() {
+	mt.mux.Lock()
+	if mt.stubbed {
+		mt.paused = false
+	}
+	mt.mux.Unlock()
 }
