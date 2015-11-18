@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+
+	"gopkg.in/mgo.v2/bson"
 )
 
 var (
@@ -106,6 +108,24 @@ func NewXmlResponder(code int, header http.Header, body interface{}) Responser {
 	}
 }
 
+func NewBsonResponder(code int, header http.Header, body interface{}) Responser {
+	if header == nil {
+		header = http.Header{}
+	}
+
+	// overwrite response content type
+	header.Set("Content-Type", "application/xml")
+
+	buf, err := bson.Marshal(body)
+
+	return &Responder{
+		code:   code,
+		header: header,
+		body:   buf,
+		err:    err,
+	}
+}
+
 func (rr *Responder) RoundTrip(r *http.Request) (*http.Response, error) {
 	if rr.err != nil {
 		return nil, rr.err
@@ -117,6 +137,11 @@ func (rr *Responder) RoundTrip(r *http.Request) (*http.Response, error) {
 		Header:     rr.header,
 		Body:       ioutil.NopCloser(bytes.NewBuffer(rr.body)),
 	}
+
+	// adjust response content length
+	contentLength := len(rr.body)
+	response.ContentLength = int64(contentLength)
+	response.Header.Set("Content-Length", strconv.Itoa(contentLength))
 
 	return response, nil
 }

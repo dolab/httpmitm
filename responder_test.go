@@ -156,6 +156,51 @@ func Test_NewXmlResponderWithError(t *testing.T) {
 	assertion.Nil(response)
 }
 
+func Test_NewBsonResponder(t *testing.T) {
+	assertion := assert.New(t)
+	code := 200
+	header := http.Header{
+		"Content-Type": []string{"application/bson"},
+		"X-Testing":    []string{"testing"},
+	}
+	body := struct {
+		Name string `bson:"name"`
+	}{"testing"}
+
+	responder := NewBsonResponder(code, header, body)
+	assertion.Implements((*Responser)(nil), responder)
+
+	request, _ := http.NewRequest("GET", "http://example.com", nil)
+	response, err := responder.RoundTrip(request)
+	assertion.Nil(err)
+	assertion.Equal(code, response.StatusCode)
+	assertion.Equal(header, response.Header)
+
+	b, _ := ioutil.ReadAll(response.Body)
+	response.Body.Close()
+	assertion.Equal([]byte{0x17, 0x0, 0x0, 0x0, 0x2, 0x6e, 0x61, 0x6d, 0x65, 0x0, 0x8, 0x0, 0x0, 0x0, 0x74, 0x65, 0x73, 0x74, 0x69, 0x6e, 0x67, 0x0, 0x0}, b)
+}
+
+func Test_NewBsonResponderWithError(t *testing.T) {
+	assertion := assert.New(t)
+	code := 200
+	header := http.Header{
+		"Content-Type": []string{"application/bson"},
+		"X-Testing":    []string{"testing"},
+	}
+	body := struct {
+		Ch chan<- bool `json:"channel"`
+	}{make(chan<- bool, 1)}
+
+	responder := NewBsonResponder(code, header, body)
+	assertion.Implements((*Responser)(nil), responder)
+
+	request, _ := http.NewRequest("GET", "http://example.com", nil)
+	response, err := responder.RoundTrip(request)
+	assertion.NotNil(err)
+	assertion.Nil(response)
+}
+
 func Test_RefuseResponse(t *testing.T) {
 	assertion := assert.New(t)
 
