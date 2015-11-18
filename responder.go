@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+
+	"gopkg.in/mgo.v2/bson"
 )
 
 var (
@@ -97,6 +99,24 @@ func NewXmlResponder(code int, header http.Header, body interface{}) Responser {
 	header.Set("Content-Type", "application/xml")
 
 	buf, err := xml.Marshal(body)
+
+	return &Responder{
+		code:   code,
+		header: header,
+		body:   buf,
+		err:    err,
+	}
+}
+
+func NewBsonResponder(code int, header http.Header, body interface{}) Responser {
+	if header == nil {
+		header = http.Header{}
+	}
+
+	// overwrite response content type
+	header.Set("Content-Type", "application/xml")
+
+	buf, err := bson.Marshal(body)
 
 	return &Responder{
 		code:   code,
