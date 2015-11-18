@@ -28,6 +28,10 @@ func NewResponse(response Responser, scheme string, times int) *Response {
 	}
 }
 
+func (rr *Response) Scheme() string {
+	return rr.scheme
+}
+
 func (rr *Response) MatchTimes() bool {
 	return rr.expectedTimes == MockUnlimitedTimes || rr.expectedTimes == rr.invokedTimes
 }
