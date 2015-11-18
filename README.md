@@ -2,7 +2,7 @@
 HTTP mock framework for golang.
 
 ## Assuming
-- httpmitm assume your requested *URL* scheme is `mitm` (**M**an-**I**n-**T**he-**M**iddle). Thus, you must make a request to `mitm://github.com` when you want to mock a request to `https://github.com`.
+- httpmitm assume your requested *URL* scheme is `mitm` (**M**an-**I**n-**T**he-**M**iddle). Thus, you must make a request to `mitm://github.com` when you want to mock a request of `https://github.com`.
 - httpmitm treats request *URL* in case-insensitive
 
 ## Usage
@@ -62,7 +62,7 @@ func Test_MitmTransport(t *testing.T) {
     assertion.Nil(err)
     assertion.Equal("GET MOCK OK", string(b))
 
-    // PUT mitm://example.c0m/mock
+    // PUT mitm://example.cOm/mock
     request, _ = http.NewRequest("PUT", "mitm://example.cOm/mock", nil)
     response, err = http.DefaultClient.Do(request)
     assertion.Nil(err)
@@ -125,7 +125,42 @@ func Test_MitmTransportWithTimes(t *testing.T) {
         assertion.Equal(101, response.StatusCode)
     }
 }
+
+func Test_MitmTransportPauseAndResume(t *testing.T) {
+    assertion := assert.New(t)
+
+    mt := NewMitmTransport()
+    mt.StubDefaultTransport(t)
+    defer mt.UnstubDefaultTransport()
+
+    // mocks
+    mt.MockRequest("GET", "https://github.com").WithResponse(101, nil, "GET OK").AnyTimes()
+
+    // response with mocked
+    response, err := http.Get("mitm://github.com")
+    assertion.Nil(err)
+    assertion.Equal(101, response.StatusCode)
+
+    // paused and response with real github server
+    mt.Pause()
+
+    response, err = http.Get("mitm://github.com")
+    assertion.Nil(err)
+    assertion.Equal(200, response.StatusCode)
+
+    // resume and response with mock again
+    mt.Resume()
+
+    response, err = http.Get("mitm://github.com")
+    assertion.Nil(err)
+    assertion.Equal(101, response.StatusCode)
+}
 ```
+
+## TODO
+- support wildcard pattern with resource url
+- support callback response type
+- support named params for callback response
 
 ## Author
 [Spring MC](https://twitter.com/mcspring)
