@@ -130,7 +130,7 @@ func (mt *MitmTransport) MockRequest(method, rawurl string) *MitmTransport {
 		rawurl = urlobj.String()
 	}
 
-	mockedKey := method + ":" + rawurl
+	mockedKey := strings.TrimRight(method+":"+rawurl, "/")
 
 	// adjust empty responder with RefusedResponder
 	if mt.lastMocked == false && mt.lastMockedKey != "" {
@@ -240,11 +240,12 @@ func (mt *MitmTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	// case-insensitive url
 	rawurl := strings.ToLower(r.URL.String())
 
-	response, ok := mt.mockedResponses[r.Method+":"+rawurl]
+	response, ok := mt.mockedResponses[r.Method+":"+strings.TrimRight(rawurl, "/")]
+
 	if !ok {
 		// fallback to abs path
 		if r.URL.RawQuery != "" {
-			response, ok = mt.mockedResponses[r.Method+":"+strings.SplitN(rawurl, "?", 2)[0]]
+			response, ok = mt.mockedResponses[r.Method+":"+strings.TrimRight(strings.SplitN(rawurl, "?", 2)[0], "/")]
 		}
 	}
 
