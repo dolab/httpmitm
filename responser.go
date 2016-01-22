@@ -5,7 +5,8 @@ import (
 	"sync"
 )
 
-// Responser is an interface representing the ability to execute a single HTTP transaction, mocking the Response for a given Request.
+// Responser is an interface representing the ability to
+// execute a single HTTP transaction, mocking the Response for a given Request.
 type Responser interface {
 	http.RoundTripper
 }
@@ -28,41 +29,41 @@ func NewResponse(response Responser, scheme string, times int) *Response {
 	}
 }
 
-func (rr *Response) Scheme() string {
-	return rr.scheme
+func (res *Response) Scheme() string {
+	return res.scheme
 }
 
-func (rr *Response) MatchTimes() bool {
-	return rr.expectedTimes == MockUnlimitedTimes || rr.expectedTimes == rr.invokedTimes
+func (res *Response) MatchTimes() bool {
+	return res.expectedTimes == MockUnlimitedTimes || res.expectedTimes == res.invokedTimes
 }
 
-func (rr *Response) Times() (expected, invoked int) {
-	return rr.expectedTimes, rr.invokedTimes
+func (res *Response) Times() (expected, invoked int) {
+	return res.expectedTimes, res.invokedTimes
 }
 
-func (rr *Response) SetExpectedTimes(expected int) {
-	rr.expectedTimes = expected
+func (res *Response) SetExpectedTimes(expected int) {
+	res.expectedTimes = expected
 }
 
-func (rr *Response) RoundTrip(r *http.Request) (*http.Response, error) {
-	rr.mux.Lock()
-	defer rr.mux.Unlock()
+func (res *Response) RoundTrip(r *http.Request) (*http.Response, error) {
+	res.mux.Lock()
+	defer res.mux.Unlock()
 
 	// unlimited mock
-	if rr.expectedTimes == MockUnlimitedTimes {
-		rr.invokedTimes += 1
+	if res.expectedTimes == MockUnlimitedTimes {
+		res.invokedTimes += 1
 
-		return rr.responder.RoundTrip(r)
+		return res.responder.RoundTrip(r)
 	}
 
-	// direct connect when response mock times is reach
-	if rr.invokedTimes == rr.expectedTimes {
-		r.URL.Scheme = rr.scheme
+	// direct connect when response mock times is reached
+	if res.invokedTimes == res.expectedTimes {
+		r.URL.Scheme = res.scheme
 
 		return httpDefaultResponder.RoundTrip(r)
 	}
 
-	rr.invokedTimes += 1
+	res.invokedTimes += 1
 
-	return rr.responder.RoundTrip(r)
+	return res.responder.RoundTrip(r)
 }
