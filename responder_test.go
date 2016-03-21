@@ -211,3 +211,48 @@ func Test_RefuseResponse(t *testing.T) {
 	assertion.NotNil(err)
 	assertion.Nil(response)
 }
+
+func Test_NewCalleeResponder(t *testing.T) {
+	assertion := assert.New(t)
+	code := 200
+	header := http.Header{
+		"Content-Type": []string{"text/plain"},
+		"X-Testing":    []string{"testing"},
+	}
+	body := "Hello, world!"
+
+	responder := NewCalleeResponder(func(r *http.Request) (int, http.Header, []byte, error) {
+		return code, header, []byte(body), nil
+	})
+	assertion.Implements((*Responser)(nil), responder)
+
+	request, _ := http.NewRequest("GET", "http://example.com", nil)
+	response, err := responder.RoundTrip(request)
+	assertion.Nil(err)
+	assertion.Equal(code, response.StatusCode)
+	assertion.Equal(header, response.Header)
+
+	b, _ := ioutil.ReadAll(response.Body)
+	response.Body.Close()
+	assertion.Equal(body, string(b))
+}
+
+func Test_NewCalleeResponderWithError(t *testing.T) {
+	assertion := assert.New(t)
+	code := 200
+	header := http.Header{
+		"Content-Type": []string{"text/plain"},
+		"X-Testing":    []string{"testing"},
+	}
+	body := "Hello, world!"
+
+	responder := NewCalleeResponder(func(r *http.Request) (int, http.Header, []byte, error) {
+		return code, header, []byte(body), ErrUnsupport
+	})
+	assertion.Implements((*Responser)(nil), responder)
+
+	request, _ := http.NewRequest("GET", "http://example.com", nil)
+	response, err := responder.RoundTrip(request)
+	assertion.EqualError(ErrUnsupport, err.Error())
+	assertion.Nil(response)
+}
