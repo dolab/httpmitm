@@ -28,15 +28,14 @@ func Test_MitmTransportStubDefaultTransport(t *testing.T) {
 func Test_MitmTransport(t *testing.T) {
 	assertion := assert.New(t)
 
-	mt := NewMitmTransport()
-	mt.StubDefaultTransport(t)
+	mt := NewMitmTransport().StubDefaultTransport(t)
 	defer mt.UnstubDefaultTransport()
 
 	// mocks
-	mt.MockRequest("GET", "mitm://example.com").WithResponse(200, nil, "GET OK")
-	mt.MockRequest("PUT", "http://example.com").WithResponse(204, nil, "PUT OK")
-	mt.MockRequest("GET", "http://example.com/mock").WithResponse(200, nil, "GET MOCK OK")
-	mt.MockRequest("PUT", "http://eXaMpLe.com/mock").WithResponse(200, nil, "PUT MOCK OK")
+	mt.MockRequest("GET", "https://example.com").WithResponse(200, nil, "GET OK")
+	mt.MockRequest("GET", "https://example.com/mock").WithResponse(200, nil, "GET MOCK OK")
+	mt.MockRequest("PUT", "https://example.com").WithResponse(204, nil, "PUT OK")
+	mt.MockRequest("PUT", "https://eXaMpLe.com/mock").WithResponse(200, nil, "PUT MOCK OK")
 
 	// GET /
 	response, err := http.Get("mitm://example.com")
@@ -94,12 +93,11 @@ func Test_MitmTransport(t *testing.T) {
 func Test_MitmTransportWithoutResponder(t *testing.T) {
 	assertion := assert.New(t)
 
-	mt := NewMitmTransport()
-	mt.StubDefaultTransport(t)
+	mt := NewMitmTransport().StubDefaultTransport(t)
 	defer mt.UnstubDefaultTransport()
 
-	// GET /refuse
-	response, err := http.Get("mitm://example.com/refuse")
+	// GET /
+	response, err := http.Get("mitm://example.com")
 	assertion.Contains(err.Error(), ErrRefused.Error())
 	assertion.Nil(response)
 
@@ -110,44 +108,10 @@ func Test_MitmTransportWithoutResponder(t *testing.T) {
 	assertion.Nil(response)
 }
 
-func Test_MitmTransportWithDefaultResponder(t *testing.T) {
-	assertion := assert.New(t)
-
-	mt := NewMitmTransport()
-	mt.StubDefaultTransport(t)
-	defer mt.UnstubDefaultTransport()
-
-	mt.SetDefaultResponder(NewResponder(100, nil, "DEFAULT OK"))
-
-	// GET /unmocked
-	response, err := http.Get("mitm://example.com/unmocked")
-	assertion.Nil(err)
-	assertion.Equal(100, response.StatusCode)
-
-	b, err := ioutil.ReadAll(response.Body)
-	response.Body.Close()
-
-	assertion.Nil(err)
-	assertion.Equal("DEFAULT OK", string(b))
-
-	// PUT /unmocked
-	request, _ := http.NewRequest("PUT", "mitm://example.com/unmocked", nil)
-	response, err = http.DefaultClient.Do(request)
-	assertion.Nil(err)
-	assertion.Equal(100, response.StatusCode)
-
-	b, err = ioutil.ReadAll(response.Body)
-	response.Body.Close()
-
-	assertion.Nil(err)
-	assertion.Equal("DEFAULT OK", string(b))
-}
-
 func Test_MitmTransportWithTimes(t *testing.T) {
 	assertion := assert.New(t)
 
-	mt := NewMitmTransport()
-	mt.StubDefaultTransport(t)
+	mt := NewMitmTransport().StubDefaultTransport(t)
 	defer mt.UnstubDefaultTransport()
 
 	// mocks
@@ -184,8 +148,7 @@ func Test_MitmTransportWithTimes(t *testing.T) {
 func Test_MitmTransportWithAnyTimes(t *testing.T) {
 	assertion := assert.New(t)
 
-	mt := NewMitmTransport()
-	mt.StubDefaultTransport(t)
+	mt := NewMitmTransport().StubDefaultTransport(t)
 	defer mt.UnstubDefaultTransport()
 
 	// mocks

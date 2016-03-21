@@ -2,68 +2,114 @@ package httpmitm
 
 import (
 	"net/http"
+	"net/url"
 	"sync"
 )
 
-// Responser is an interface representing the ability to
-// execute a single HTTP transaction, mocking the Response for a given Request.
-type Responser interface {
-	http.RoundTripper
+var (
+	RefusedResponser = NewResponser(NewRefusedResponder(), "/", MockUnlimitedTimes)
+)
+
+// Responser is an container of mocks for the same method and domain
+type Responser struct {
+	mux   sync.RWMutex
+	mocks map[string]*mocker // relates request path with mocker under the same domain
 }
 
-type Response struct {
-	mux sync.Mutex
+// NewResponser creates a new *Responser and adds a new mokcer with rawurl's path
+func NewResponser(responder http.RoundTripper, rawurl string, times int) *Responser {
+	r := &Responser{
+		mocks: make(map[string]*mocker),
+	}
 
-	responder     Responser
-	scheme        string // origin url scheme
-	expectedTimes int    // expected mock times
-	invokedTimes  int    // really mocked times
+	return r.New(responder, rawurl, times)
 }
 
-func NewResponse(response Responser, scheme string, times int) *Response {
-	return &Response{
-		responder:     response,
-		scheme:        scheme,
+// New adds new mocker to *Responser with rawurl's path, this may
+// overwrite existed mocker with the same path.
+func (r *Responser) New(responder http.RoundTripper, rawurl string, times int) *Responser {
+	r.mux.Lock()
+	defer r.mux.Unlock()
+
+	urlobj, _ := url.Parse(rawurl)
+
+	path := urlobj.Path
+	if path == "" {
+		path = "/"
+	}
+
+	r.mocks[path] = &mocker{
+		responder:     responder,
+		rawurl:        rawurl,
+		matcher:       DefaultMatcher,
+		originScheme:  urlobj.Scheme,
 		expectedTimes: times,
 		invokedTimes:  0,
 	}
+
+	return r
 }
 
-func (res *Response) Scheme() string {
-	return res.scheme
-}
-
-func (res *Response) MatchTimes() bool {
-	return res.expectedTimes == MockUnlimitedTimes || res.expectedTimes == res.invokedTimes
-}
-
-func (res *Response) Times() (expected, invoked int) {
-	return res.expectedTimes, res.invokedTimes
-}
-
-func (res *Response) SetExpectedTimes(expected int) {
-	res.expectedTimes = expected
-}
-
-func (res *Response) RoundTrip(r *http.Request) (*http.Response, error) {
-	res.mux.Lock()
-	defer res.mux.Unlock()
-
-	// unlimited mock
-	if res.expectedTimes == MockUnlimitedTimes {
-		res.invokedTimes += 1
-
-		return res.responder.RoundTrip(r)
+// SetExpectedTimesByRawURL changes expected times of mocker releated with given rawurl's path
+func (r *Responser) SetExpectedTimesByRawURL(rawurl string, expected int) {
+	mocker := r.FindByRawURL(rawurl)
+	if mocker == nil {
+		panic("Unstubbed resource: " + rawurl)
 	}
 
-	// direct connect when response mock times is reached
-	if res.invokedTimes == res.expectedTimes {
-		r.URL.Scheme = res.scheme
+	mocker.SetExpectedTimes(expected)
+}
 
-		return httpDefaultResponder.RoundTrip(r)
+// SetRequestMatcherByRawURL changes request matcher of mocker releated with given rawurl's path
+func (r *Responser) SetRequestMatcherByRawURL(rawurl string, matcher RequestMatcher) {
+	mocker := r.FindByRawURL(rawurl)
+	if mocker == nil {
+		panic("Unstubbed resource: " + rawurl)
 	}
 
-	res.invokedTimes += 1
+	mocker.SetRequestMatcher(matcher)
+}
 
-	return res.responder.RoundTrip(r)
+// Mocks returns all mockers of the *Responser
+func (r *Responser) Mocks() map[string]*mocker {
+	return r.mocks
+}
+
+// Find resolves mocker releated with the path, it returns mocker of the root path by default
+func (r *Responser) Find(path string) *mocker {
+	r.mux.RLock()
+	defer r.mux.RUnlock()
+
+	// first, try request path
+	mocker, ok := r.mocks[path]
+	if ok {
+		return mocker
+	}
+
+	// fallback to root path
+	return r.mocks["/"]
+}
+
+// FindByURL returns mocker of url path
+func (r *Responser) FindByURL(urlobj *url.URL) *mocker {
+	return r.Find(urlobj.Path)
+}
+
+// FindByRawURL returns mocker of url path
+func (r *Responser) FindByRawURL(rawurl string) *mocker {
+	urlobj, err := url.Parse(rawurl)
+	if err != nil {
+		return nil
+	}
+
+	return r.FindByURL(urlobj)
+}
+
+func (r *Responser) RoundTrip(req *http.Request) (*http.Response, error) {
+	mocker := r.Find(req.URL.Path)
+	if mocker == nil {
+		return nil, ErrNotFound
+	}
+
+	return mocker.RoundTrip(req)
 }
