@@ -24,6 +24,7 @@ type Responder struct {
 	header http.Header
 	body   []byte
 	err    error
+	callee func(*http.Request) (int, http.Header, []byte, error)
 }
 
 func NewResponder(code int, header http.Header, body interface{}) Responser {
@@ -126,7 +127,18 @@ func NewBsonResponder(code int, header http.Header, body interface{}) Responser 
 	}
 }
 
+func NewCalleeResponder(callee func(r *http.Request) (code int, header http.Header, body []byte, err error)) Responser {
+	return &Responder{
+		callee: callee,
+	}
+}
+
 func (rr *Responder) RoundTrip(r *http.Request) (*http.Response, error) {
+	// apply callee if exists
+	if rr.callee != nil {
+		rr.code, rr.header, rr.body, rr.err = rr.callee(r)
+	}
+
 	if rr.err != nil {
 		return nil, rr.err
 	}

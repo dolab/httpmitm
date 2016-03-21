@@ -231,6 +231,10 @@ func (mt *MitmTransport) WithBsonResponse(code int, header http.Header, body int
 	return mt.WithResponser(NewBsonResponder(code, header, body))
 }
 
+func (mt *MitmTransport) WithCalleeResponse(callee func(r *http.Request) (code int, header http.Header, body []byte, err error)) *MitmTransport {
+	return mt.WithResponser(NewCalleeResponder(callee))
+}
+
 func (mt *MitmTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	// direct connect for none mitm scheme
 	if strings.ToLower(r.URL.Scheme) != MockScheme {
