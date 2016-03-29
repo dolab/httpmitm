@@ -13,13 +13,13 @@ var (
 // Responser is an container of mocks for the same method and domain
 type Responser struct {
 	mux   sync.RWMutex
-	mocks map[string]*mocker // relates request path with mocker under the same domain
+	mocks map[string]*Mocker // relates request path with mocker under the same domain
 }
 
 // NewResponser creates a new *Responser and adds a new mokcer with rawurl's path
 func NewResponser(responder http.RoundTripper, rawurl string, times int) *Responser {
 	r := &Responser{
-		mocks: make(map[string]*mocker),
+		mocks: make(map[string]*Mocker),
 	}
 
 	return r.New(responder, rawurl, times)
@@ -38,7 +38,7 @@ func (r *Responser) New(responder http.RoundTripper, rawurl string, times int) *
 		path = "/"
 	}
 
-	r.mocks[path] = &mocker{
+	r.mocks[path] = &Mocker{
 		responder:     responder,
 		rawurl:        rawurl,
 		matcher:       DefaultMatcher,
@@ -71,12 +71,12 @@ func (r *Responser) SetRequestMatcherByRawURL(rawurl string, matcher RequestMatc
 }
 
 // Mocks returns all mockers of the *Responser
-func (r *Responser) Mocks() map[string]*mocker {
+func (r *Responser) Mocks() map[string]*Mocker {
 	return r.mocks
 }
 
 // Find resolves mocker releated with the path, it returns mocker of the root path by default
-func (r *Responser) Find(path string) *mocker {
+func (r *Responser) Find(path string) *Mocker {
 	r.mux.RLock()
 	defer r.mux.RUnlock()
 
@@ -91,12 +91,12 @@ func (r *Responser) Find(path string) *mocker {
 }
 
 // FindByURL returns mocker of url path
-func (r *Responser) FindByURL(urlobj *url.URL) *mocker {
+func (r *Responser) FindByURL(urlobj *url.URL) *Mocker {
 	return r.Find(urlobj.Path)
 }
 
 // FindByRawURL returns mocker of url path
-func (r *Responser) FindByRawURL(rawurl string) *mocker {
+func (r *Responser) FindByRawURL(rawurl string) *Mocker {
 	urlobj, err := url.Parse(rawurl)
 	if err != nil {
 		return nil

@@ -41,7 +41,7 @@ var (
 // RequestMatcher is a callback for detecting whether request matches the mocked url
 type RequestMatcher func(r *http.Request, rawurl string) bool
 
-type mocker struct {
+type Mocker struct {
 	mux sync.Mutex
 
 	responder     http.RoundTripper
@@ -52,10 +52,10 @@ type mocker struct {
 	invokedTimes  int    // really mocked times
 }
 
-func NewMocker(responder http.RoundTripper, rawurl string, times int) *mocker {
+func NewMocker(responder http.RoundTripper, rawurl string, times int) *Mocker {
 	urlobj, _ := url.Parse(rawurl)
 
-	return &mocker{
+	return &Mocker{
 		responder:     responder,
 		rawurl:        rawurl,
 		matcher:       DefaultMatcher,
@@ -65,31 +65,31 @@ func NewMocker(responder http.RoundTripper, rawurl string, times int) *mocker {
 	}
 }
 
-func (m *mocker) IsRequestMatched(req *http.Request) bool {
+func (m *Mocker) IsRequestMatched(req *http.Request) bool {
 	return m.matcher(req, m.rawurl)
 }
 
-func (m *mocker) IsTimesMatched() bool {
+func (m *Mocker) IsTimesMatched() bool {
 	return m.expectedTimes == MockUnlimitedTimes || m.expectedTimes == m.invokedTimes
 }
 
-func (m *mocker) Scheme() string {
+func (m *Mocker) Scheme() string {
 	return m.originScheme
 }
 
-func (m *mocker) Times() (expected, invoked int) {
+func (m *Mocker) Times() (expected, invoked int) {
 	return m.expectedTimes, m.invokedTimes
 }
 
-func (m *mocker) SetExpectedTimes(expected int) {
+func (m *Mocker) SetExpectedTimes(expected int) {
 	m.expectedTimes = expected
 }
 
-func (m *mocker) SetRequestMatcher(matcher RequestMatcher) {
+func (m *Mocker) SetRequestMatcher(matcher RequestMatcher) {
 	m.matcher = matcher
 }
 
-func (m *mocker) RoundTrip(req *http.Request) (*http.Response, error) {
+func (m *Mocker) RoundTrip(req *http.Request) (*http.Response, error) {
 	m.mux.Lock()
 	defer m.mux.Unlock()
 

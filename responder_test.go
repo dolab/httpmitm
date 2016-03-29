@@ -2,9 +2,11 @@ package httpmitm
 
 import (
 	"encoding/xml"
+	"io"
 	"io/ioutil"
 	"net/http"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -194,10 +196,9 @@ func Test_NewCalleeResponder(t *testing.T) {
 	}
 	body := "Hello, world!"
 
-	responder := NewCalleeResponder(func(r *http.Request) (int, http.Header, []byte, error) {
-		return code, header, []byte(body), nil
+	responder := NewCalleeResponder(func(r *http.Request) (int, http.Header, io.Reader, error) {
+		return code, header, strings.NewReader(body), nil
 	})
-	assertion.Implements((*Responser)(nil), responder)
 
 	request, _ := http.NewRequest("GET", "http://example.com", nil)
 	response, err := responder.RoundTrip(request)
@@ -219,10 +220,9 @@ func Test_NewCalleeResponderWithError(t *testing.T) {
 	}
 	body := "Hello, world!"
 
-	responder := NewCalleeResponder(func(r *http.Request) (int, http.Header, []byte, error) {
-		return code, header, []byte(body), ErrUnsupport
+	responder := NewCalleeResponder(func(r *http.Request) (int, http.Header, io.Reader, error) {
+		return code, header, strings.NewReader(body), ErrUnsupport
 	})
-	assertion.Implements((*Responser)(nil), responder)
 
 	request, _ := http.NewRequest("GET", "http://example.com", nil)
 	response, err := responder.RoundTrip(request)

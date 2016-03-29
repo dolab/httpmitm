@@ -4,11 +4,11 @@ import (
 	"bytes"
 	"encoding/json"
 	"encoding/xml"
-	"fmt"
 	"io"
 	"io/ioutil"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 )
 
@@ -16,14 +16,16 @@ var (
 	httpDefaultResponder = http.DefaultTransport // internal
 )
 
+// Responder defines mocked request response
 type Responder struct {
 	code   int
 	header http.Header
 	body   io.Reader
 	err    error
-	callee func(*http.Request) (int, http.Header, []byte, error)
+	callee func(r *http.Request) (code int, header http.Header, reader io.Reader, err error)
 }
 
+// NewResponder returns Responder with provided arguments
 func NewResponder(code int, header http.Header, body interface{}) http.RoundTripper {
 	var (
 		reader io.Reader
@@ -66,6 +68,7 @@ func NewResponder(code int, header http.Header, body interface{}) http.RoundTrip
 	}
 }
 
+// NewJsonResponder returns Responder with json.Marshal(body) format
 func NewJsonResponder(code int, header http.Header, body interface{}) http.RoundTripper {
 	if header == nil {
 		header = http.Header{}
@@ -84,6 +87,7 @@ func NewJsonResponder(code int, header http.Header, body interface{}) http.Round
 	}
 }
 
+// NewXmlResponder returns Responder with xml.Marshal(body) format
 func NewXmlResponder(code int, header http.Header, body interface{}) http.RoundTripper {
 	if header == nil {
 		header = http.Header{}
@@ -102,13 +106,25 @@ func NewXmlResponder(code int, header http.Header, body interface{}) http.RoundT
 	}
 }
 
+// NewCalleeResponder returns Responder with callee which invoked when request mocked
+func NewCalleeResponder(callee func(r *http.Request) (code int, header http.Header, body io.Reader, err error)) http.RoundTripper {
+	return &Responder{
+		callee: callee,
+	}
+}
+
 func (r *Responder) RoundTrip(req *http.Request) (*http.Response, error) {
+	// apply callee if exists
+	if r.callee != nil {
+		r.code, r.header, r.body, r.err = r.callee(req)
+	}
+
 	if r.err != nil {
 		return nil, r.err
 	}
 
 	response := &http.Response{
-		Status:     fmt.Sprintf("%d", r.code),
+		Status:     strconv.Itoa(r.code),
 		StatusCode: r.code,
 		Header:     r.header,
 		Body:       ioutil.NopCloser(r.body),
@@ -122,16 +138,16 @@ func (r *Responder) RoundTrip(req *http.Request) (*http.Response, error) {
 		}
 
 		// pull back for response reader
+		response.Header.Add("Content-Length", strconv.Itoa(len(b)))
 		response.Body = ioutil.NopCloser(bytes.NewReader(b))
-
-		response.Header.Add("Content-Length", fmt.Sprintf("%d", len(b)))
+		response.ContentLength = int64(len(b))
 	}
 
 	return response, nil
 }
 
 // RefusedResponder represents a connection failure of request and response.
-// It uses as default responder of empty mock.
+// It uses as default responder for empty mock.
 type RefusedResponder struct{}
 
 func NewRefusedResponder() *RefusedResponder {
