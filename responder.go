@@ -16,7 +16,8 @@ var (
 	httpDefaultResponder = http.DefaultTransport // internal
 )
 
-// Responder defines mocked request response
+// Responder defines response of mocked request
+// NOTE: Responder implements http.RoundTripper for invokation chainning.
 type Responder struct {
 	code   int
 	header http.Header
@@ -25,7 +26,7 @@ type Responder struct {
 	callee func(r *http.Request) (code int, header http.Header, reader io.Reader, err error)
 }
 
-// NewResponder returns Responder with provided arguments
+// NewResponder returns Responder with provided data
 func NewResponder(code int, header http.Header, body interface{}) http.RoundTripper {
 	var (
 		reader io.Reader
@@ -106,7 +107,7 @@ func NewXmlResponder(code int, header http.Header, body interface{}) http.RoundT
 	}
 }
 
-// NewCalleeResponder returns Responder with callee which invoked when request mocked
+// NewCalleeResponder returns Responder with callee which invoked with mocked request
 func NewCalleeResponder(callee func(r *http.Request) (code int, header http.Header, body io.Reader, err error)) http.RoundTripper {
 	return &Responder{
 		callee: callee,
@@ -127,27 +128,34 @@ func (r *Responder) RoundTrip(req *http.Request) (*http.Response, error) {
 		Status:     strconv.Itoa(r.code),
 		StatusCode: r.code,
 		Header:     r.header,
-		Body:       ioutil.NopCloser(r.body),
 	}
 
-	// adjust response content length header if unexists
+	if body, ok := r.body.(io.ReadCloser); ok {
+		response.Body = body
+	} else {
+		response.Body = ioutil.NopCloser(r.body)
+	}
+
+	// adjust response content length header if missed
 	if _, ok := response.Header["Content-Length"]; !ok {
-		b, err := ioutil.ReadAll(r.body)
+		b, err := ioutil.ReadAll(response.Body)
 		if err != nil {
 			return nil, err
 		}
+		response.Body.Close()
+
+		response.Header.Add("Content-Length", strconv.Itoa(len(b)))
+		response.ContentLength = int64(len(b))
 
 		// pull back for response reader
-		response.Header.Add("Content-Length", strconv.Itoa(len(b)))
 		response.Body = ioutil.NopCloser(bytes.NewReader(b))
-		response.ContentLength = int64(len(b))
 	}
 
 	return response, nil
 }
 
-// RefusedResponder represents a connection failure of request and response.
-// It uses as default responder for empty mock.
+// RefusedResponder represents a connection failure response of mocked request.
+// It's used as default Responder for empty mock.
 type RefusedResponder struct{}
 
 func NewRefusedResponder() *RefusedResponder {
@@ -156,4 +164,15 @@ func NewRefusedResponder() *RefusedResponder {
 
 func (r *RefusedResponder) RoundTrip(req *http.Request) (*http.Response, error) {
 	return nil, ErrRefused
+}
+
+// TimeoutResponder represents a connection timeout response of mocked request.
+type TimeoutResponder struct{}
+
+func NewTimeoutResponder() *TimeoutResponder {
+	return &TimeoutResponder{}
+}
+
+func (t *TimeoutResponder) RoundTrip(req *http.Request) (*http.Response, error) {
+	return nil, ErrTimeout
 }

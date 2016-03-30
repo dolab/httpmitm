@@ -25,7 +25,7 @@ func Test_MitmTransportStubDefaultTransport(t *testing.T) {
 	assertion.Equal(mt, http.DefaultTransport)
 }
 
-func Test_MitmTransport(t *testing.T) {
+func Test_MitmTransport123(t *testing.T) {
 	assertion := assert.New(t)
 
 	mt := NewMitmTransport().StubDefaultTransport(t)

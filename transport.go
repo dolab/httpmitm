@@ -12,8 +12,7 @@ import (
 	"testing"
 )
 
-// MitmTransport implements http.RoundTripper, which hijacks http requests issued by
-// an http.Client with mitm scheme.
+// MitmTransport implements http.RoundTripper, which hijacks http request issued by an http.Client with mitm scheme.
 // It defferrs to the registered responders instead of making a real http request.
 type MitmTransport struct {
 	mux sync.Mutex
@@ -36,6 +35,7 @@ func NewMitmTransport() *MitmTransport {
 		mocked:            false,
 		stubbed:           false,
 		paused:            false,
+		lastMockedMethod:  "",
 		lastMockedURL:     "",
 		lastMockedMatcher: DefaultMatcher,
 		lastMockedTimes:   MockDefaultTimes,
@@ -69,12 +69,13 @@ func (mitm *MitmTransport) UnstubDefaultTransport() {
 		http.DefaultTransport = httpDefaultResponder
 	}
 
-	// does times miss match?
+	// is times miss match?
 	if !mitm.paused {
 		errlogs := []string{}
 		for key, response := range mitm.stubs {
 			for path, mocker := range response.Mocks() {
 				if !mocker.IsTimesMatched() {
+					key = strings.Replace(key, MockScheme, mocker.Scheme(), 1)
 					expected, invoked := mocker.Times()
 
 					errlogs = append(errlogs, "        Error Trace:    %s:%d\n        Error:          Expected "+key+path+" with "+fmt.Sprintf("%d", expected)+" times, but got "+fmt.Sprintf("%d", invoked)+" times\n\n")
@@ -83,16 +84,26 @@ func (mitm *MitmTransport) UnstubDefaultTransport() {
 		}
 
 		if len(errlogs) > 0 {
-			pcs := make([]uintptr, 1)
-			runtime.Callers(2, pcs)
+			pcs := make([]uintptr, 10)
+			max := runtime.Callers(2, pcs)
 
-			pcfunc := runtime.FuncForPC(pcs[0])
-			pcfile, pcline := pcfunc.FileLine(pcs[0])
-			pcname := filepath.Base(pcfile)
+			var (
+				pcfunc *runtime.Func
+				pcfile string
+				pcline int
+			)
+			for i := 0; i < max; i++ {
+				pcfunc = runtime.FuncForPC(pcs[i] - 1)
+				if strings.HasPrefix(pcfunc.Name(), "runtime.") {
+					continue
+				}
+
+				pcfile, pcline = pcfunc.FileLine(pcs[i])
+			}
 
 			// format errlogs
 			for i, errlog := range errlogs {
-				errlogs[i] = fmt.Sprintf(errlog, pcname, pcline)
+				errlogs[i] = fmt.Sprintf(errlog, filepath.Base(pcfile), pcline)
 			}
 
 			fmt.Printf("--- FAIL: %s\n%s", pcfunc.Name(), strings.Join(errlogs, "\n"))
@@ -114,7 +125,7 @@ func (mitm *MitmTransport) MockRequest(method, rawurl string) *MitmTransport {
 		panic(err.Error())
 	}
 
-	// adjust empty responder with RefusedResponser
+	// adjust empty responder with RefusedResponser for prev un-finished mock
 	if mitm.mocked == false && mitm.lastMockedMethod != "" && mitm.lastMockedURL != "" {
 		lastKey, _ := mitm.calcRequestKey(mitm.lastMockedMethod, mitm.lastMockedURL)
 		if lastKey == key {
@@ -135,22 +146,17 @@ func (mitm *MitmTransport) MockRequest(method, rawurl string) *MitmTransport {
 	return mitm
 }
 
-func (mitm *MitmTransport) ByMatcher(matcher func(r *http.Request, rawurl string) bool) *MitmTransport {
+// ByMatcher apply custom matcher for current stub
+func (mitm *MitmTransport) ByMatcher(matcher func(r *http.Request, urlobj *url.URL) bool) *MitmTransport {
 	mitm.mux.Lock()
 	defer mitm.mux.Unlock()
 
 	mitm.ensureChained()
 
+	// modify mocked matcher
 	if mitm.mocked {
-		// modify mocked matcher
 		lastKey, _ := mitm.calcRequestKey(mitm.lastMockedMethod, mitm.lastMockedURL)
-		mitm.stubs[lastKey].SetRequestMatcherByRawURL(mitm.lastMockedURL, matcher)
-
-		// reset last mocked states
-		mitm.lastMockedMethod = ""
-		mitm.lastMockedURL = ""
-		mitm.lastMockedMatcher = DefaultMatcher
-		mitm.lastMockedTimes = MockDefaultTimes
+		mitm.stubs[lastKey].SetMatcherByRawURL(mitm.lastMockedURL, matcher)
 	} else {
 		mitm.lastMockedMatcher = matcher
 	}
@@ -158,6 +164,7 @@ func (mitm *MitmTransport) ByMatcher(matcher func(r *http.Request, rawurl string
 	return mitm
 }
 
+// Times apply custom match times for current stub
 func (mitm *MitmTransport) Times(i int) *MitmTransport {
 	mitm.mux.Lock()
 	defer mitm.mux.Unlock()
@@ -165,19 +172,13 @@ func (mitm *MitmTransport) Times(i int) *MitmTransport {
 	mitm.ensureChained()
 
 	if i < 0 && i != MockUnlimitedTimes {
-		panic("Invalid value of times. It must be non-negative integer value.")
+		panic(ErrTimes.Error())
 	}
 
+	// modify mocked times
 	if mitm.mocked {
-		// modify mocked times
 		lastKey, _ := mitm.calcRequestKey(mitm.lastMockedMethod, mitm.lastMockedURL)
 		mitm.stubs[lastKey].SetExpectedTimesByRawURL(mitm.lastMockedURL, i)
-
-		// reset last mock key and times
-		mitm.lastMockedMethod = ""
-		mitm.lastMockedURL = ""
-		mitm.lastMockedMatcher = DefaultMatcher
-		mitm.lastMockedTimes = MockDefaultTimes
 	} else {
 		mitm.lastMockedTimes = i
 	}
@@ -201,7 +202,8 @@ func (mitm *MitmTransport) WithResponser(responder http.RoundTripper) *MitmTrans
 	} else {
 		mitm.stubs[key].New(responder, mitm.lastMockedURL, mitm.lastMockedTimes)
 	}
-	mitm.stubs[key].SetRequestMatcherByRawURL(mitm.lastMockedURL, mitm.lastMockedMatcher)
+
+	mitm.stubs[key].SetMatcherByRawURL(mitm.lastMockedURL, mitm.lastMockedMatcher)
 	mitm.mocked = true
 
 	return mitm
@@ -275,7 +277,7 @@ func (mitm *MitmTransport) Resume() {
 
 func (mitm *MitmTransport) ensureChained() {
 	if mitm.lastMockedMethod == "" || mitm.lastMockedURL == "" {
-		panic("Not an chained invocation. Please invoking MockRequest(method, url) first.")
+		panic(ErrInvocation.Error())
 	}
 }
 
