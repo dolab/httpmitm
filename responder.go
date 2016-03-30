@@ -9,48 +9,48 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
-
-	"gopkg.in/mgo.v2/bson"
+	"strings"
 )
 
 var (
-	RefuseResponse = NewResponse(NewRefuseResponder(), MockScheme, MockUnlimitedTimes)
-
 	httpDefaultResponder = http.DefaultTransport // internal
 )
 
+// Responder defines response of mocked request
+// NOTE: Responder implements http.RoundTripper for invokation chainning.
 type Responder struct {
 	code   int
 	header http.Header
-	body   []byte
+	body   io.Reader
 	err    error
-	callee func(*http.Request) (int, http.Header, []byte, error)
+	callee func(r *http.Request) (code int, header http.Header, reader io.Reader, err error)
 }
 
-func NewResponder(code int, header http.Header, body interface{}) Responser {
+// NewResponder returns Responder with provided data
+func NewResponder(code int, header http.Header, body interface{}) http.RoundTripper {
 	var (
-		buf []byte
-		err error
+		reader io.Reader
+		err    error
 	)
 
 	switch body.(type) {
-	case io.Reader:
-		reader, _ := body.(io.Reader)
-
-		buf, err = ioutil.ReadAll(reader)
-
 	case string:
 		s, _ := body.(string)
 
-		buf = []byte(s)
+		reader = strings.NewReader(s)
 
 	case []byte:
-		buf, _ = body.([]byte)
+		b, _ := body.([]byte)
+
+		reader = bytes.NewReader(b)
 
 	case url.Values:
 		params, _ := body.(url.Values)
 
-		buf = []byte(params.Encode())
+		reader = strings.NewReader(params.Encode())
+
+	case io.Reader:
+		reader, _ = body.(io.Reader)
 
 	default:
 		err = ErrUnsupport
@@ -61,19 +61,16 @@ func NewResponder(code int, header http.Header, body interface{}) Responser {
 		header = http.Header{}
 	}
 
-	if _, ok := header["Content-Type"]; !ok {
-		header.Set("Content-Type", "text/plain")
-	}
-
 	return &Responder{
 		code:   code,
 		header: header,
-		body:   buf,
+		body:   reader,
 		err:    err,
 	}
 }
 
-func NewJsonResponder(code int, header http.Header, body interface{}) Responser {
+// NewJsonResponder returns Responder with json.Marshal(body) format
+func NewJsonResponder(code int, header http.Header, body interface{}) http.RoundTripper {
 	if header == nil {
 		header = http.Header{}
 	}
@@ -81,91 +78,101 @@ func NewJsonResponder(code int, header http.Header, body interface{}) Responser 
 	// overwrite response content type
 	header.Set("Content-Type", "application/json")
 
-	buf, err := json.Marshal(body)
+	b, err := json.Marshal(body)
 
 	return &Responder{
 		code:   code,
 		header: header,
-		body:   buf,
+		body:   bytes.NewReader(b),
 		err:    err,
 	}
 }
 
-func NewXmlResponder(code int, header http.Header, body interface{}) Responser {
+// NewXmlResponder returns Responder with xml.Marshal(body) format
+func NewXmlResponder(code int, header http.Header, body interface{}) http.RoundTripper {
 	if header == nil {
 		header = http.Header{}
 	}
 
 	// overwrite response content type
-	header.Set("Content-Type", "application/xml")
+	header.Set("Content-Type", "text/xml")
 
-	buf, err := xml.Marshal(body)
-
-	return &Responder{
-		code:   code,
-		header: header,
-		body:   buf,
-		err:    err,
-	}
-}
-
-func NewBsonResponder(code int, header http.Header, body interface{}) Responser {
-	if header == nil {
-		header = http.Header{}
-	}
-
-	// overwrite response content type
-	header.Set("Content-Type", "application/xml")
-
-	buf, err := bson.Marshal(body)
+	b, err := xml.Marshal(body)
 
 	return &Responder{
 		code:   code,
 		header: header,
-		body:   buf,
+		body:   bytes.NewReader(b),
 		err:    err,
 	}
 }
 
-func NewCalleeResponder(callee func(r *http.Request) (code int, header http.Header, body []byte, err error)) Responser {
+// NewCalleeResponder returns Responder with callee which invoked with mocked request
+func NewCalleeResponder(callee func(r *http.Request) (code int, header http.Header, body io.Reader, err error)) http.RoundTripper {
 	return &Responder{
 		callee: callee,
 	}
 }
 
-func (rr *Responder) RoundTrip(r *http.Request) (*http.Response, error) {
+func (r *Responder) RoundTrip(req *http.Request) (*http.Response, error) {
 	// apply callee if exists
-	if rr.callee != nil {
-		rr.code, rr.header, rr.body, rr.err = rr.callee(r)
+	if r.callee != nil {
+		r.code, r.header, r.body, r.err = r.callee(req)
 	}
 
-	if rr.err != nil {
-		return nil, rr.err
+	if r.err != nil {
+		return nil, r.err
 	}
 
 	response := &http.Response{
-		Status:     strconv.Itoa(rr.code),
-		StatusCode: rr.code,
-		Header:     rr.header,
-		Body:       ioutil.NopCloser(bytes.NewBuffer(rr.body)),
+		Status:     strconv.Itoa(r.code),
+		StatusCode: r.code,
+		Header:     r.header,
 	}
 
-	// adjust response content length
-	contentLength := len(rr.body)
-	response.ContentLength = int64(contentLength)
-	response.Header.Set("Content-Length", strconv.Itoa(contentLength))
+	if body, ok := r.body.(io.ReadCloser); ok {
+		response.Body = body
+	} else {
+		response.Body = ioutil.NopCloser(r.body)
+	}
+
+	// adjust response content length header if missed
+	if _, ok := response.Header["Content-Length"]; !ok {
+		b, err := ioutil.ReadAll(response.Body)
+		if err != nil {
+			return nil, err
+		}
+		response.Body.Close()
+
+		response.Header.Add("Content-Length", strconv.Itoa(len(b)))
+		response.ContentLength = int64(len(b))
+
+		// pull back for response reader
+		response.Body = ioutil.NopCloser(bytes.NewReader(b))
+	}
 
 	return response, nil
 }
 
-// RefuseResponder represents a connection failure of request and response
-type RefuseResponder struct {
+// RefusedResponder represents a connection failure response of mocked request.
+// It's used as default Responder for empty mock.
+type RefusedResponder struct{}
+
+func NewRefusedResponder() *RefusedResponder {
+	return &RefusedResponder{}
 }
 
-func NewRefuseResponder() *RefuseResponder {
-	return &RefuseResponder{}
-}
-
-func (rr *RefuseResponder) RoundTrip(r *http.Request) (*http.Response, error) {
+func (r *RefusedResponder) RoundTrip(req *http.Request) (*http.Response, error) {
 	return nil, ErrRefused
+}
+
+// TimeoutResponder represents a connection timeout response of mocked request.
+type TimeoutResponder struct{}
+
+func NewTimeoutResponder() *TimeoutResponder {
+	return &TimeoutResponder{}
+}
+
+func (t *TimeoutResponder) RoundTrip(req *http.Request) (*http.Response, error) {
+	return nil, ErrTimeout
 }

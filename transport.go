@@ -2,6 +2,7 @@ package httpmitm
 
 import (
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"path/filepath"
@@ -11,285 +12,284 @@ import (
 	"testing"
 )
 
-const (
-	MockScheme         = "mitm"
-	MockDefaultTimes   = 1
-	MockUnlimitedTimes = -1
-)
-
-// MitmTransport implements http.RoundTripper, which hijacks http requests issued by
-// an http.Client with mitm scheme.
+// MitmTransport implements http.RoundTripper, which hijacks http request issued by an http.Client with mitm scheme.
 // It defferrs to the registered responders instead of making a real http request.
 type MitmTransport struct {
 	mux sync.Mutex
 
-	mockedResponses map[string]*Response // responders registered for MITM request
-	defaultResponse *Response            // default responder for MITM request
+	testing *testing.T
+	stubs   map[string]*Responser // responders registered for MITM request
+	mocked  bool                  // indicate whether current chain finished?
+	stubbed bool                  // indicate whether http.DefaultTransport stubbed?
+	paused  bool                  // indicate whether current mocked transport paused?
 
-	lastMocked       bool // indicate whether current chain finished?
-	lastMockedKey    string
-	lastMockedTimes  int
-	lastMockedScheme string
-	stubbed          bool
-	paused           bool
-	testing          *testing.T
+	lastMockedMethod  string
+	lastMockedURL     string
+	lastMockedMatcher RequestMatcher
+	lastMockedTimes   int
 }
 
 func NewMitmTransport() *MitmTransport {
 	return &MitmTransport{
-		mockedResponses: make(map[string]*Response),
-		lastMocked:      false,
-		lastMockedKey:   "",
-		lastMockedTimes: MockDefaultTimes,
-		stubbed:         false,
-		paused:          false,
+		stubs:             make(map[string]*Responser),
+		mocked:            false,
+		stubbed:           false,
+		paused:            false,
+		lastMockedMethod:  "",
+		lastMockedURL:     "",
+		lastMockedMatcher: DefaultMatcher,
+		lastMockedTimes:   MockDefaultTimes,
 	}
-}
-
-// SetDefaultResponder sets default responder for all unregistered mitm request.
-func (mt *MitmTransport) SetDefaultResponder(responder Responser) {
-	mt.defaultResponse = NewResponse(responder, MockScheme, MockUnlimitedTimes)
 }
 
 // StubDefaultTransport stubs http.DefaultTransport with MitmTransport.
-func (mt *MitmTransport) StubDefaultTransport(t *testing.T) {
-	mt.mux.Lock()
-	defer mt.mux.Unlock()
+func (mitm *MitmTransport) StubDefaultTransport(t *testing.T) *MitmTransport {
+	mitm.mux.Lock()
+	defer mitm.mux.Unlock()
 
-	if !mt.stubbed {
-		mt.stubbed = true
+	if !mitm.stubbed {
+		mitm.stubbed = true
 
-		http.DefaultTransport = mt
+		http.DefaultTransport = mitm
 	}
 
-	mt.testing = t
+	mitm.testing = t
+
+	return mitm
 }
 
 // UnstubDefaultTransport restores http.DefaultTransport
-func (mt *MitmTransport) UnstubDefaultTransport() {
-	mt.mux.Lock()
-	defer mt.mux.Unlock()
+func (mitm *MitmTransport) UnstubDefaultTransport() {
+	mitm.mux.Lock()
+	defer mitm.mux.Unlock()
 
-	if mt.stubbed {
-		mt.stubbed = false
+	if mitm.stubbed {
+		mitm.stubbed = false
 
 		http.DefaultTransport = httpDefaultResponder
 	}
 
-	// does times miss match?
-	if !mt.paused {
+	// is times miss match?
+	if !mitm.paused {
 		errlogs := []string{}
-		for key, response := range mt.mockedResponses {
-			if !response.MatchTimes() {
-				expected, invoked := response.Times()
+		for key, response := range mitm.stubs {
+			for path, mocker := range response.Mocks() {
+				if !mocker.IsTimesMatched() {
+					key = strings.Replace(key, MockScheme, mocker.Scheme(), 1)
+					expected, invoked := mocker.Times()
 
-				errlogs = append(errlogs, "        Error Trace:    %s:%d\n        Error:          Expected request "+key+" with "+fmt.Sprintf("%d", expected)+" times, but got "+fmt.Sprintf("%d", invoked)+" times\n\n")
+					errlogs = append(errlogs, "        Error Trace:    %s:%d\n        Error:          Expected "+key+path+" with "+fmt.Sprintf("%d", expected)+" times, but got "+fmt.Sprintf("%d", invoked)+" times\n\n")
+				}
 			}
 		}
 
 		if len(errlogs) > 0 {
-			pcs := make([]uintptr, 1)
-			runtime.Callers(2, pcs)
+			pcs := make([]uintptr, 10)
+			max := runtime.Callers(2, pcs)
 
-			pcfunc := runtime.FuncForPC(pcs[0])
-			pcfile, pcline := pcfunc.FileLine(pcs[0])
-			pcname := filepath.Base(pcfile)
+			var (
+				pcfunc *runtime.Func
+				pcfile string
+				pcline int
+			)
+			for i := 0; i < max; i++ {
+				pcfunc = runtime.FuncForPC(pcs[i] - 1)
+				if strings.HasPrefix(pcfunc.Name(), "runtime.") {
+					continue
+				}
+
+				pcfile, pcline = pcfunc.FileLine(pcs[i])
+			}
 
 			// format errlogs
 			for i, errlog := range errlogs {
-				errlogs[i] = fmt.Sprintf(errlog, pcname, pcline)
+				errlogs[i] = fmt.Sprintf(errlog, filepath.Base(pcfile), pcline)
 			}
 
 			fmt.Printf("--- FAIL: %s\n%s", pcfunc.Name(), strings.Join(errlogs, "\n"))
-			mt.testing.Fail()
+			mitm.testing.Fail()
 		}
 	}
 
-	mt.testing = nil
+	mitm.testing = nil
+	mitm.stubs = make(map[string]*Responser)
 }
 
-func (mt *MitmTransport) MockRequest(method, rawurl string) *MitmTransport {
-	mt.mux.Lock()
-	defer mt.mux.Unlock()
+// MockRequest stubs resource with request method
+func (mitm *MitmTransport) MockRequest(method, rawurl string) *MitmTransport {
+	mitm.mux.Lock()
+	defer mitm.mux.Unlock()
 
-	// uppercase method
-	method = strings.ToUpper(method)
-
-	// case-insensitive url
-	rawurl = strings.ToLower(rawurl)
-
-	// adjust mock scheme of http:// and https://
-	if !strings.HasPrefix(rawurl, MockScheme+"://") {
-		urlobj, err := url.Parse(rawurl)
-		if err != nil {
-			return nil
-		}
-
-		urlobj.Scheme, mt.lastMockedScheme = MockScheme, urlobj.Scheme
-
-		rawurl = urlobj.String()
+	key, err := mitm.calcRequestKey(method, rawurl)
+	if err != nil {
+		panic(err.Error())
 	}
 
-	mockedKey := strings.TrimRight(method+":"+rawurl, "/")
-
-	// adjust empty responder with RefusedResponder
-	if mt.lastMocked == false && mt.lastMockedKey != "" {
-		if mt.lastMockedKey == mockedKey {
-			return mt
+	// adjust empty responder with RefusedResponser for prev un-finished mock
+	if mitm.mocked == false && mitm.lastMockedMethod != "" && mitm.lastMockedURL != "" {
+		lastKey, _ := mitm.calcRequestKey(mitm.lastMockedMethod, mitm.lastMockedURL)
+		if lastKey == key {
+			return mitm
 		}
 
-		if mt.mockedResponses[mt.lastMockedKey] == nil {
-			mt.mockedResponses[mt.lastMockedKey] = RefuseResponse
+		if mitm.stubs[lastKey] == nil {
+			mitm.stubs[lastKey] = RefusedResponser
 		}
 	}
 
-	mt.mockedResponses[mockedKey] = nil
-	mt.lastMocked = false
-	mt.lastMockedKey = mockedKey
-	mt.lastMockedTimes = MockDefaultTimes
+	mitm.mocked = false
+	mitm.lastMockedMethod = method
+	mitm.lastMockedURL = rawurl
+	mitm.lastMockedMatcher = DefaultMatcher
+	mitm.lastMockedTimes = MockDefaultTimes
 
-	return mt
+	return mitm
 }
 
-func (mt *MitmTransport) Times(i int) *MitmTransport {
-	mt.mux.Lock()
-	defer mt.mux.Unlock()
+// ByMatcher apply custom matcher for current stub
+func (mitm *MitmTransport) ByMatcher(matcher func(r *http.Request, urlobj *url.URL) bool) *MitmTransport {
+	mitm.mux.Lock()
+	defer mitm.mux.Unlock()
 
-	if i < 0 {
-		panic("Invalid times. It must be non-negative integer value.")
-	}
+	mitm.ensureChained()
 
-	if mt.lastMockedKey == "" {
-		panic("Not an chained invoke. Please invoke MockRequest(method, url) first.")
-	}
-
-	if mt.lastMocked {
-		// modify mocked times
-		mt.mockedResponses[mt.lastMockedKey].SetExpectedTimes(i)
-
-		// reset last mock key and times
-		mt.lastMockedKey = ""
-		mt.lastMockedTimes = MockDefaultTimes
-		mt.lastMockedScheme = ""
+	// modify mocked matcher
+	if mitm.mocked {
+		lastKey, _ := mitm.calcRequestKey(mitm.lastMockedMethod, mitm.lastMockedURL)
+		mitm.stubs[lastKey].SetMatcherByRawURL(mitm.lastMockedURL, matcher)
 	} else {
-		mt.lastMockedTimes = i
+		mitm.lastMockedMatcher = matcher
 	}
 
-	return mt
+	return mitm
 }
 
-func (mt *MitmTransport) AnyTimes() *MitmTransport {
-	mt.mux.Lock()
-	defer mt.mux.Unlock()
+// Times apply custom match times for current stub
+func (mitm *MitmTransport) Times(i int) *MitmTransport {
+	mitm.mux.Lock()
+	defer mitm.mux.Unlock()
 
-	if mt.lastMockedKey == "" {
-		panic("Not an chained invoke. Please invoke MockRequest(method, url) first.")
+	mitm.ensureChained()
+
+	if i < 0 && i != MockUnlimitedTimes {
+		panic(ErrTimes.Error())
 	}
 
-	if mt.lastMocked {
-		// modify mocked times
-		mt.mockedResponses[mt.lastMockedKey].SetExpectedTimes(MockUnlimitedTimes)
-
-		// reset last mock key and times
-		mt.lastMockedKey = ""
-		mt.lastMockedTimes = MockDefaultTimes
-		mt.lastMockedScheme = ""
+	// modify mocked times
+	if mitm.mocked {
+		lastKey, _ := mitm.calcRequestKey(mitm.lastMockedMethod, mitm.lastMockedURL)
+		mitm.stubs[lastKey].SetExpectedTimesByRawURL(mitm.lastMockedURL, i)
 	} else {
-		mt.lastMockedTimes = MockUnlimitedTimes
+		mitm.lastMockedTimes = i
 	}
 
-	return mt
+	return mitm
 }
 
-func (mt *MitmTransport) WithResponser(responder Responser) *MitmTransport {
-	mt.mux.Lock()
-	defer mt.mux.Unlock()
+func (mitm *MitmTransport) AnyTimes() *MitmTransport {
+	return mitm.Times(MockUnlimitedTimes)
+}
 
-	if mt.lastMockedKey == "" {
-		panic("Not an chained invoke. Please invoke MockRequest(method, url) first.")
+func (mitm *MitmTransport) WithResponser(responder http.RoundTripper) *MitmTransport {
+	mitm.mux.Lock()
+	defer mitm.mux.Unlock()
+
+	mitm.ensureChained()
+
+	key, _ := mitm.calcRequestKey(mitm.lastMockedMethod, mitm.lastMockedURL)
+	if mitm.stubs[key] == nil || mitm.stubs[key] == RefusedResponser {
+		mitm.stubs[key] = NewResponser(responder, mitm.lastMockedURL, mitm.lastMockedTimes)
+	} else {
+		mitm.stubs[key].New(responder, mitm.lastMockedURL, mitm.lastMockedTimes)
 	}
 
-	mt.mockedResponses[mt.lastMockedKey] = NewResponse(responder, mt.lastMockedScheme, mt.lastMockedTimes)
-	mt.lastMocked = true
+	mitm.stubs[key].SetMatcherByRawURL(mitm.lastMockedURL, mitm.lastMockedMatcher)
+	mitm.mocked = true
 
-	return mt
+	return mitm
 }
 
-func (mt *MitmTransport) WithResponse(code int, header http.Header, body interface{}) *MitmTransport {
-	return mt.WithResponser(NewResponder(code, header, body))
+func (mitm *MitmTransport) WithResponse(code int, header http.Header, body interface{}) *MitmTransport {
+	return mitm.WithResponser(NewResponder(code, header, body))
 }
 
-func (mt *MitmTransport) WithJsonResponse(code int, header http.Header, body interface{}) *MitmTransport {
-	return mt.WithResponser(NewJsonResponder(code, header, body))
+func (mitm *MitmTransport) WithJsonResponse(code int, header http.Header, body interface{}) *MitmTransport {
+	return mitm.WithResponser(NewJsonResponder(code, header, body))
 }
 
-func (mt *MitmTransport) WithXmlResponse(code int, header http.Header, body interface{}) *MitmTransport {
-	return mt.WithResponser(NewXmlResponder(code, header, body))
+func (mitm *MitmTransport) WithXmlResponse(code int, header http.Header, body interface{}) *MitmTransport {
+	return mitm.WithResponser(NewXmlResponder(code, header, body))
 }
 
-func (mt *MitmTransport) WithBsonResponse(code int, header http.Header, body interface{}) *MitmTransport {
-	return mt.WithResponser(NewBsonResponder(code, header, body))
+func (mitm *MitmTransport) WithCalleeResponse(callee func(r *http.Request) (code int, header http.Header, body io.Reader, err error)) *MitmTransport {
+	return mitm.WithResponser(NewCalleeResponder(callee))
 }
 
-func (mt *MitmTransport) WithCalleeResponse(callee func(r *http.Request) (code int, header http.Header, body []byte, err error)) *MitmTransport {
-	return mt.WithResponser(NewCalleeResponder(callee))
-}
-
-func (mt *MitmTransport) RoundTrip(r *http.Request) (*http.Response, error) {
-	// direct connect for none mitm scheme
-	if strings.ToLower(r.URL.Scheme) != MockScheme {
-		return httpDefaultResponder.RoundTrip(r)
+func (mitm *MitmTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	// direct connection for none mitm scheme
+	if strings.ToLower(req.URL.Scheme) != MockScheme {
+		return httpDefaultResponder.RoundTrip(req)
 	}
 
-	// case-insensitive url
-	rawurl := strings.ToLower(r.URL.String())
-
-	response, ok := mt.mockedResponses[r.Method+":"+strings.TrimRight(rawurl, "/")]
-
+	response, ok := mitm.stubs[mitm.normalizeKey(req.Method, MockScheme, req.URL.Host)]
 	if !ok {
-		// fallback to abs path
-		if r.URL.RawQuery != "" {
-			response, ok = mt.mockedResponses[r.Method+":"+strings.TrimRight(strings.SplitN(rawurl, "?", 2)[0], "/")]
-		}
+		return RefusedResponser.RoundTrip(req)
 	}
 
-	if ok {
-		// direct connect for paused
-		if mt.paused {
-			r.URL.Scheme = response.scheme
-
-			return httpDefaultResponder.RoundTrip(r)
-		}
-
-		return response.RoundTrip(r)
+	mocker := response.Find(req.URL.Path)
+	if mocker == nil {
+		return RefusedResponser.RoundTrip(req)
 	}
 
-	if mt.defaultResponse == nil {
-		return RefuseResponse.RoundTrip(r)
+	// direct connection for paused
+	if mitm.paused {
+		// adjust request url scheme
+		req.URL.Scheme = mocker.Scheme()
+
+		return httpDefaultResponder.RoundTrip(req)
 	}
 
-	return mt.defaultResponse.RoundTrip(r)
+	return mocker.RoundTrip(req)
 }
 
-// TODO: what's timeout behavior?
-func (mt *MitmTransport) CancelRequest(r *http.Request) {
+// TODO: what's behavior of request timeout?
+func (mitm *MitmTransport) CancelRequest(r *http.Request) {
 
 }
 
-// Pause pauses mock for all requests
-func (mt *MitmTransport) Pause() {
-	mt.mux.Lock()
-	if mt.stubbed {
-		mt.paused = true
+// Pause pauses all stubs of all requests
+func (mitm *MitmTransport) Pause() {
+	mitm.mux.Lock()
+	if mitm.stubbed {
+		mitm.paused = true
 	}
-	mt.mux.Unlock()
+	mitm.mux.Unlock()
 }
 
-// Resume resumes mock again
-func (mt *MitmTransport) Resume() {
-	mt.mux.Lock()
-	if mt.stubbed {
-		mt.paused = false
+// Resume resumes all paused stubs of all requests
+func (mitm *MitmTransport) Resume() {
+	mitm.mux.Lock()
+	if mitm.stubbed {
+		mitm.paused = false
 	}
-	mt.mux.Unlock()
+	mitm.mux.Unlock()
+}
+
+func (mitm *MitmTransport) ensureChained() {
+	if mitm.lastMockedMethod == "" || mitm.lastMockedURL == "" {
+		panic(ErrInvocation.Error())
+	}
+}
+
+func (mitm *MitmTransport) calcRequestKey(method, rawurl string) (string, error) {
+	urlobj, err := url.Parse(rawurl)
+	if err != nil {
+		return "", err
+	}
+
+	return mitm.normalizeKey(method, MockScheme, urlobj.Host), nil
+}
+
+func (mitm *MitmTransport) normalizeKey(method, scheme, host string) string {
+	return strings.ToUpper(method) + " " + strings.TrimRight(strings.ToLower(scheme+"://"+host), "/")
 }

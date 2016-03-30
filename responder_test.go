@@ -2,8 +2,11 @@ package httpmitm
 
 import (
 	"encoding/xml"
+	"io"
 	"io/ioutil"
 	"net/http"
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -17,19 +20,43 @@ func Test_NewResponder(t *testing.T) {
 		"X-Testing":    []string{"testing"},
 	}
 	body := "Hello, world!"
+	rawurl := "https://example.com"
 
 	responder := NewResponder(code, header, body)
-	assertion.Implements((*Responser)(nil), responder)
+	assertion.Implements((*http.RoundTripper)(nil), responder)
 
-	request, _ := http.NewRequest("GET", "http://example.com", nil)
+	request, _ := http.NewRequest("GET", rawurl, nil)
 	response, err := responder.RoundTrip(request)
 	assertion.Nil(err)
 	assertion.Equal(code, response.StatusCode)
-	assertion.Equal(header, response.Header)
+	assertion.Equal(strconv.Itoa(len(body)), response.Header.Get("Content-Length"))
+
+	b, err := ioutil.ReadAll(response.Body)
+	response.Body.Close()
+	assertion.Nil(err)
+	assertion.Equal(body, string(b))
+}
+
+func Test_NewResponderWithSuppliedContentLength(t *testing.T) {
+	assertion := assert.New(t)
+	code := 200
+	header := http.Header{
+		"Content-Type":   []string{"text/plain"},
+		"Content-Length": []string{"1024"},
+		"X-Testing":      []string{"testing"},
+	}
+	body := "Hello, world!"
+	rawurl := "https://example.com"
+
+	responder := NewResponder(code, header, body)
+	request, _ := http.NewRequest("GET", rawurl, nil)
+
+	response, _ := responder.RoundTrip(request)
+	assertion.Equal("1024", response.Header.Get("Content-Length"))
 
 	b, _ := ioutil.ReadAll(response.Body)
 	response.Body.Close()
-	assertion.Equal(body, string(b))
+	assertion.NotEqual(1024, len(b))
 }
 
 func Test_NewResponderWithError(t *testing.T) {
@@ -42,11 +69,11 @@ func Test_NewResponderWithError(t *testing.T) {
 	body := struct {
 		Name string
 	}{"testing"}
+	rawurl := "https://example.com"
 
 	responder := NewResponder(code, header, body)
-	assertion.Implements((*Responser)(nil), responder)
+	request, _ := http.NewRequest("GET", rawurl, nil)
 
-	request, _ := http.NewRequest("GET", "http://example.com", nil)
 	response, err := responder.RoundTrip(request)
 	assertion.EqualError(ErrUnsupport, err.Error())
 	assertion.Nil(response)
@@ -62,19 +89,21 @@ func Test_NewJsonResponder(t *testing.T) {
 	body := struct {
 		Name string `json:"name"`
 	}{"testing"}
+	rawurl := "https://example.com"
+	rawbody := `{"name":"testing"}`
 
 	responder := NewJsonResponder(code, header, body)
-	assertion.Implements((*Responser)(nil), responder)
 
-	request, _ := http.NewRequest("GET", "http://example.com", nil)
+	request, _ := http.NewRequest("GET", rawurl, nil)
 	response, err := responder.RoundTrip(request)
 	assertion.Nil(err)
 	assertion.Equal(code, response.StatusCode)
-	assertion.Equal(header, response.Header)
+	assertion.Equal("application/json", response.Header.Get("Content-Type"))
+	assertion.Equal(strconv.Itoa(len(rawbody)), response.Header.Get("Content-Length"))
 
 	b, _ := ioutil.ReadAll(response.Body)
 	response.Body.Close()
-	assertion.Equal(`{"name":"testing"}`, string(b))
+	assertion.Equal(rawbody, string(b))
 }
 
 func Test_NewJsonResponderWithError(t *testing.T) {
@@ -87,11 +116,11 @@ func Test_NewJsonResponderWithError(t *testing.T) {
 	body := struct {
 		Ch chan<- bool `json:"channel"`
 	}{make(chan<- bool, 1)}
+	rawurl := "https://example.com"
 
 	responder := NewJsonResponder(code, header, body)
-	assertion.Implements((*Responser)(nil), responder)
 
-	request, _ := http.NewRequest("GET", "http://example.com", nil)
+	request, _ := http.NewRequest("GET", rawurl, nil)
 	response, err := responder.RoundTrip(request)
 	assertion.NotNil(err)
 	assertion.Nil(response)
@@ -114,19 +143,21 @@ func Test_NewXmlResponder(t *testing.T) {
 		},
 		Name: "testing",
 	}
+	rawurl := "https://exmpale.com"
+	rawbody := `<Responder xmlns="http://xmlns.example.com"><Name>testing</Name></Responder>`
 
 	responder := NewXmlResponder(code, header, body)
-	assertion.Implements((*Responser)(nil), responder)
 
-	request, _ := http.NewRequest("GET", "http://example.com", nil)
+	request, _ := http.NewRequest("GET", rawurl, nil)
 	response, err := responder.RoundTrip(request)
 	assertion.Nil(err)
 	assertion.Equal(code, response.StatusCode)
-	assertion.Equal(header, response.Header)
+	assertion.Equal("text/xml", response.Header.Get("Content-Type"))
+	assertion.Equal(strconv.Itoa(len(rawbody)), response.Header.Get("Content-Length"))
 
 	b, _ := ioutil.ReadAll(response.Body)
 	response.Body.Close()
-	assertion.Equal(`<Responder xmlns="http://xmlns.example.com"><Name>testing</Name></Responder>`, string(b))
+	assertion.Equal(rawbody, string(b))
 }
 
 func Test_NewXmlResponderWithError(t *testing.T) {
@@ -146,68 +177,12 @@ func Test_NewXmlResponderWithError(t *testing.T) {
 		},
 		Ch: make(chan<- bool, 1),
 	}
+	rawurl := "https://exmaple.com"
 
 	responder := NewXmlResponder(code, header, body)
-	assertion.Implements((*Responser)(nil), responder)
 
-	request, _ := http.NewRequest("GET", "http://example.com", nil)
+	request, _ := http.NewRequest("GET", rawurl, nil)
 	response, err := responder.RoundTrip(request)
-	assertion.NotNil(err)
-	assertion.Nil(response)
-}
-
-func Test_NewBsonResponder(t *testing.T) {
-	assertion := assert.New(t)
-	code := 200
-	header := http.Header{
-		"Content-Type": []string{"application/bson"},
-		"X-Testing":    []string{"testing"},
-	}
-	body := struct {
-		Name string `bson:"name"`
-	}{"testing"}
-
-	responder := NewBsonResponder(code, header, body)
-	assertion.Implements((*Responser)(nil), responder)
-
-	request, _ := http.NewRequest("GET", "http://example.com", nil)
-	response, err := responder.RoundTrip(request)
-	assertion.Nil(err)
-	assertion.Equal(code, response.StatusCode)
-	assertion.Equal(header, response.Header)
-
-	b, _ := ioutil.ReadAll(response.Body)
-	response.Body.Close()
-	assertion.Equal([]byte{0x17, 0x0, 0x0, 0x0, 0x2, 0x6e, 0x61, 0x6d, 0x65, 0x0, 0x8, 0x0, 0x0, 0x0, 0x74, 0x65, 0x73, 0x74, 0x69, 0x6e, 0x67, 0x0, 0x0}, b)
-}
-
-func Test_NewBsonResponderWithError(t *testing.T) {
-	assertion := assert.New(t)
-	code := 200
-	header := http.Header{
-		"Content-Type": []string{"application/bson"},
-		"X-Testing":    []string{"testing"},
-	}
-	body := struct {
-		Ch chan<- bool `json:"channel"`
-	}{make(chan<- bool, 1)}
-
-	responder := NewBsonResponder(code, header, body)
-	assertion.Implements((*Responser)(nil), responder)
-
-	request, _ := http.NewRequest("GET", "http://example.com", nil)
-	response, err := responder.RoundTrip(request)
-	assertion.NotNil(err)
-	assertion.Nil(response)
-}
-
-func Test_RefuseResponse(t *testing.T) {
-	assertion := assert.New(t)
-
-	assertion.Implements((*Responser)(nil), RefuseResponse)
-
-	request, _ := http.NewRequest("GET", "http://example.com", nil)
-	response, err := RefuseResponse.RoundTrip(request)
 	assertion.NotNil(err)
 	assertion.Nil(response)
 }
@@ -221,10 +196,9 @@ func Test_NewCalleeResponder(t *testing.T) {
 	}
 	body := "Hello, world!"
 
-	responder := NewCalleeResponder(func(r *http.Request) (int, http.Header, []byte, error) {
-		return code, header, []byte(body), nil
+	responder := NewCalleeResponder(func(r *http.Request) (int, http.Header, io.Reader, error) {
+		return code, header, strings.NewReader(body), nil
 	})
-	assertion.Implements((*Responser)(nil), responder)
 
 	request, _ := http.NewRequest("GET", "http://example.com", nil)
 	response, err := responder.RoundTrip(request)
@@ -246,10 +220,9 @@ func Test_NewCalleeResponderWithError(t *testing.T) {
 	}
 	body := "Hello, world!"
 
-	responder := NewCalleeResponder(func(r *http.Request) (int, http.Header, []byte, error) {
-		return code, header, []byte(body), ErrUnsupport
+	responder := NewCalleeResponder(func(r *http.Request) (int, http.Header, io.Reader, error) {
+		return code, header, strings.NewReader(body), ErrUnsupport
 	})
-	assertion.Implements((*Responser)(nil), responder)
 
 	request, _ := http.NewRequest("GET", "http://example.com", nil)
 	response, err := responder.RoundTrip(request)
