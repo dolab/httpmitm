@@ -142,15 +142,15 @@ func (r *Responder) RoundTrip(req *http.Request) (*http.Response, error) {
 	}
 	response.Body.Close()
 
-	// pull back for response reader
-	r.body = ioutil.NopCloser(bytes.NewReader(b))
-	response.Body = ioutil.NopCloser(bytes.NewReader(b))
-
 	// adjust response content length header if missed
 	if _, ok := response.Header["Content-Length"]; !ok {
 		response.Header.Add("Content-Length", strconv.Itoa(len(b)))
-		response.ContentLength = int64(len(b))
 	}
+	response.ContentLength, _ = strconv.ParseInt(response.Header.Get("Content-Length"), 10, 64)
+
+	// pull back for response reader
+	r.body = ioutil.NopCloser(bytes.NewReader(b))
+	response.Body = ioutil.NopCloser(bytes.NewReader(b))
 
 	return response, nil
 }
