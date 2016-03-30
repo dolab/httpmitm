@@ -25,7 +25,7 @@ func Test_MitmTransportStubDefaultTransport(t *testing.T) {
 	assertion.Equal(mt, http.DefaultTransport)
 }
 
-func Test_MitmTransport123(t *testing.T) {
+func Test_MitmTransport(t *testing.T) {
 	assertion := assert.New(t)
 
 	mt := NewMitmTransport().StubDefaultTransport(t)
@@ -162,14 +162,35 @@ func Test_MitmTransportWithAnyTimes(t *testing.T) {
 	}
 }
 
-func Test_MitmTransportMissMatched(t *testing.T) {
-	mt := NewMitmTransport()
-	mt.StubDefaultTransport(t)
+func Test_MitmTransportWithTimesError(t *testing.T) {
+	mt := NewMitmTransport().StubDefaultTransport(t)
 	defer mt.UnstubDefaultTransport()
 
-	// this should fail test case
-	// mt.MockRequest("GET", "http://www.example.com").WithResponse(101, nil, "GET OK").Times(1)
-	// mt.MockRequest("PUT", "https://example.com").WithResponse(101, nil, "GET OK").Times(1)
+	assertion := assert.New(t)
+
+	type result struct {
+		Code int    `json:"code"`
+		Name string `json:"name"`
+	}
+
+	// mocks
+	mt.MockRequest("GET", "http://example.com").WithJsonResponse(200, nil, result{
+		Code: 200,
+		Name: "OK",
+	}).Times(3)
+
+	// GET mitm://example.com
+	for i := 0; i < 3; i++ {
+		response, err := http.Get("mitm://example.com")
+		assertion.Nil(err)
+		assertion.Equal(200, response.StatusCode)
+
+		b, err := ioutil.ReadAll(response.Body)
+		response.Body.Close()
+
+		assertion.Nil(err)
+		assertion.Equal(`{"code":200,"name":"OK"}`, string(b))
+	}
 }
 
 func Test_MitmTransportPauseAndResume(t *testing.T) {

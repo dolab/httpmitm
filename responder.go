@@ -136,19 +136,20 @@ func (r *Responder) RoundTrip(req *http.Request) (*http.Response, error) {
 		response.Body = ioutil.NopCloser(r.body)
 	}
 
+	b, err := ioutil.ReadAll(response.Body)
+	if err != nil {
+		return nil, err
+	}
+	response.Body.Close()
+
+	// pull back for response reader
+	r.body = ioutil.NopCloser(bytes.NewReader(b))
+	response.Body = ioutil.NopCloser(bytes.NewReader(b))
+
 	// adjust response content length header if missed
 	if _, ok := response.Header["Content-Length"]; !ok {
-		b, err := ioutil.ReadAll(response.Body)
-		if err != nil {
-			return nil, err
-		}
-		response.Body.Close()
-
 		response.Header.Add("Content-Length", strconv.Itoa(len(b)))
 		response.ContentLength = int64(len(b))
-
-		// pull back for response reader
-		response.Body = ioutil.NopCloser(bytes.NewReader(b))
 	}
 
 	return response, nil
