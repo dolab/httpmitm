@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
+	"github.com/golib/assert"
 )
 
 func Test_NewMocker(t *testing.T) {

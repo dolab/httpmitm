@@ -6,7 +6,7 @@ import (
 	"net/url"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
+	"github.com/golib/assert"
 )
 
 type testResponserRounderTrip struct{}
