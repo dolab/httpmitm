@@ -14,7 +14,7 @@ import (
     "testing"
 
     "github.com/dolab/httpmitm"
-    "github.com/stretchr/testify/assert"
+    "github.com/golib/assert"
 )
 
 func Test_MitmTransport(t *testing.T) {

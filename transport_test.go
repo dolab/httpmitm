@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
+	"github.com/golib/assert"
 )
 
 func Test_NewMitmTransport(t *testing.T) {
