@@ -30,6 +30,7 @@ func Test_NewResponder(t *testing.T) {
 	assertion.Nil(err)
 	assertion.Equal(code, response.StatusCode)
 	assertion.Equal(strconv.Itoa(len(body)), response.Header.Get("Content-Length"))
+	assertion.NotNil(response.Request)
 
 	b, err := ioutil.ReadAll(response.Body)
 	response.Body.Close()
