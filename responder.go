@@ -128,6 +128,7 @@ func (r *Responder) RoundTrip(req *http.Request) (*http.Response, error) {
 		Status:     strconv.Itoa(r.code),
 		StatusCode: r.code,
 		Header:     r.header,
+		Request:    req,
 	}
 
 	if body, ok := r.body.(io.ReadCloser); ok {
