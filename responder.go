@@ -2,8 +2,6 @@ package httpmitm
 
 import (
 	"bytes"
-	"encoding/json"
-	"encoding/xml"
 	"io"
 	"io/ioutil"
 	"net/http"
@@ -42,6 +40,8 @@ func NewResponder(code int, header http.Header, body interface{}) http.RoundTrip
 
 // NewJsonResponder returns Responder with json.Marshal(body) format
 func NewJsonResponder(code int, header http.Header, body interface{}) http.RoundTripper {
+	reader, err := Helpers.NewJsonReaderFromIface(body)
+
 	if header == nil {
 		header = http.Header{}
 	}
@@ -49,18 +49,18 @@ func NewJsonResponder(code int, header http.Header, body interface{}) http.Round
 	// overwrite response content type
 	header.Set("Content-Type", "application/json")
 
-	b, err := json.Marshal(body)
-
 	return &Responder{
 		code:   code,
 		header: header,
-		body:   bytes.NewReader(b),
+		body:   reader,
 		err:    err,
 	}
 }
 
 // NewXmlResponder returns Responder with xml.Marshal(body) format
 func NewXmlResponder(code int, header http.Header, body interface{}) http.RoundTripper {
+	reader, err := Helpers.NewXmlReaderFromIface(body)
+
 	if header == nil {
 		header = http.Header{}
 	}
@@ -68,12 +68,10 @@ func NewXmlResponder(code int, header http.Header, body interface{}) http.RoundT
 	// overwrite response content type
 	header.Set("Content-Type", "text/xml")
 
-	b, err := xml.Marshal(body)
-
 	return &Responder{
 		code:   code,
 		header: header,
-		body:   bytes.NewReader(b),
+		body:   reader,
 		err:    err,
 	}
 }
