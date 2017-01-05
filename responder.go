@@ -7,9 +7,7 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
-	"net/url"
 	"strconv"
-	"strings"
 )
 
 var (
@@ -28,34 +26,7 @@ type Responder struct {
 
 // NewResponder returns Responder with provided data
 func NewResponder(code int, header http.Header, body interface{}) http.RoundTripper {
-	var (
-		reader io.Reader
-		err    error
-	)
-
-	switch body.(type) {
-	case string:
-		s, _ := body.(string)
-
-		reader = strings.NewReader(s)
-
-	case []byte:
-		b, _ := body.([]byte)
-
-		reader = bytes.NewReader(b)
-
-	case url.Values:
-		params, _ := body.(url.Values)
-
-		reader = strings.NewReader(params.Encode())
-
-	case io.Reader:
-		reader, _ = body.(io.Reader)
-
-	default:
-		err = ErrUnsupport
-
-	}
+	reader, err := Helpers.NewReaderFromIface(body)
 
 	if header == nil {
 		header = http.Header{}
