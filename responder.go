@@ -2,14 +2,10 @@ package httpmitm
 
 import (
 	"bytes"
-	"encoding/json"
-	"encoding/xml"
 	"io"
 	"io/ioutil"
 	"net/http"
-	"net/url"
 	"strconv"
-	"strings"
 )
 
 var (
@@ -28,34 +24,7 @@ type Responder struct {
 
 // NewResponder returns Responder with provided data
 func NewResponder(code int, header http.Header, body interface{}) http.RoundTripper {
-	var (
-		reader io.Reader
-		err    error
-	)
-
-	switch body.(type) {
-	case string:
-		s, _ := body.(string)
-
-		reader = strings.NewReader(s)
-
-	case []byte:
-		b, _ := body.([]byte)
-
-		reader = bytes.NewReader(b)
-
-	case url.Values:
-		params, _ := body.(url.Values)
-
-		reader = strings.NewReader(params.Encode())
-
-	case io.Reader:
-		reader, _ = body.(io.Reader)
-
-	default:
-		err = ErrUnsupport
-
-	}
+	reader, err := Helpers.NewReaderFromIface(body)
 
 	if header == nil {
 		header = http.Header{}
@@ -71,6 +40,8 @@ func NewResponder(code int, header http.Header, body interface{}) http.RoundTrip
 
 // NewJsonResponder returns Responder with json.Marshal(body) format
 func NewJsonResponder(code int, header http.Header, body interface{}) http.RoundTripper {
+	reader, err := Helpers.NewJsonReaderFromIface(body)
+
 	if header == nil {
 		header = http.Header{}
 	}
@@ -78,18 +49,18 @@ func NewJsonResponder(code int, header http.Header, body interface{}) http.Round
 	// overwrite response content type
 	header.Set("Content-Type", "application/json")
 
-	b, err := json.Marshal(body)
-
 	return &Responder{
 		code:   code,
 		header: header,
-		body:   bytes.NewReader(b),
+		body:   reader,
 		err:    err,
 	}
 }
 
 // NewXmlResponder returns Responder with xml.Marshal(body) format
 func NewXmlResponder(code int, header http.Header, body interface{}) http.RoundTripper {
+	reader, err := Helpers.NewXmlReaderFromIface(body)
+
 	if header == nil {
 		header = http.Header{}
 	}
@@ -97,12 +68,10 @@ func NewXmlResponder(code int, header http.Header, body interface{}) http.RoundT
 	// overwrite response content type
 	header.Set("Content-Type", "text/xml")
 
-	b, err := xml.Marshal(body)
-
 	return &Responder{
 		code:   code,
 		header: header,
-		body:   bytes.NewReader(b),
+		body:   reader,
 		err:    err,
 	}
 }
