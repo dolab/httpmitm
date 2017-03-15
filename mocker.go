@@ -115,7 +115,7 @@ func (m *Mocker) RoundTrip(req *http.Request) (*http.Response, error) {
 	}
 
 	// is mock times reached?
-	if m.invokedTimes == m.expectedTimes {
+	if m.invokedTimes >= m.expectedTimes {
 		req.URL.Scheme = m.originScheme
 
 		return httpDefaultResponder.RoundTrip(req)
