@@ -48,6 +48,9 @@ type Mocker struct {
 	originScheme  string // origin url scheme
 	expectedTimes int    // expect mocked times
 	invokedTimes  int    // really mocked times
+
+	mark      string // mock mark
+	saveForce bool   // mock save force
 }
 
 func NewMocker(responder http.RoundTripper, rawurl string, times int) *Mocker {
@@ -76,6 +79,22 @@ func (m *Mocker) IsRequestMatched(req *http.Request) bool {
 	urlobj.Scheme = MockScheme
 
 	return m.matcher(req, urlobj)
+}
+
+func (m *Mocker) SetMark(mark string) {
+	m.mark = mark
+}
+
+func (m *Mocker) Mark() string {
+	return m.mark
+}
+
+func (m *Mocker) SetSaveForce(force bool) {
+	m.saveForce = force
+}
+
+func (m *Mocker) SaveForce() bool {
+	return m.saveForce
 }
 
 func (m *Mocker) IsTimesMatched() bool {
