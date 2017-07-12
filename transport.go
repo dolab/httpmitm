@@ -1,8 +1,10 @@
 package httpmitm
 
 import (
+	"bytes"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net/http"
 	"net/url"
 	"path/filepath"
@@ -27,6 +29,8 @@ type MitmTransport struct {
 	lastMockedURL     string
 	lastMockedMatcher RequestMatcher
 	lastMockedTimes   int
+
+	responseSetter ResponseSetter
 }
 
 func NewMitmTransport() *MitmTransport {
@@ -40,6 +44,10 @@ func NewMitmTransport() *MitmTransport {
 		lastMockedMatcher: DefaultMatcher,
 		lastMockedTimes:   MockDefaultTimes,
 	}
+}
+
+func (mitm *MitmTransport) SetRessponseSetter(setter ResponseSetter) {
+	mitm.responseSetter = setter
 }
 
 // StubDefaultTransport stubs http.DefaultTransport with MitmTransport.
@@ -246,7 +254,21 @@ func (mitm *MitmTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 		// adjust request url scheme
 		req.URL.Scheme = mocker.Scheme()
 
-		return httpDefaultResponder.RoundTrip(req)
+		resp, err := httpDefaultResponder.RoundTrip(req)
+		if err == nil {
+			body, err := ioutil.ReadAll(resp.Body)
+			defer resp.Body.Close()
+			if err != nil {
+				return resp, err
+			}
+
+			// response set
+			mitm.responseSetter.ResponseSet(mocker.Mark(), string(body), mocker.SaveForce())
+			// pull back for response reader
+			resp.Body = ioutil.NopCloser(bytes.NewReader(body))
+		}
+
+		return resp, err
 	}
 
 	return mocker.RoundTrip(req)
@@ -264,6 +286,23 @@ func (mitm *MitmTransport) Pause() {
 		mitm.paused = true
 	}
 	mitm.mux.Unlock()
+}
+
+func (mitm *MitmTransport) ResponseSave(mark string, force bool) {
+	mitm.mux.Lock()
+	defer mitm.mux.Unlock()
+
+	mitm.ensureChained()
+
+	key, _ := mitm.calcRequestKey(mitm.lastMockedMethod, mitm.lastMockedURL)
+	if mitm.stubs[key] == nil || mitm.stubs[key] == RefusedResponser {
+		return
+	} else {
+		mitm.stubs[key].FindByRawURL(mitm.lastMockedURL).SetMark(mark)
+		mitm.stubs[key].FindByRawURL(mitm.lastMockedURL).SetSaveForce(force)
+	}
+
+	return
 }
 
 // Resume resumes all paused stubs of all requests
