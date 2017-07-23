@@ -32,13 +32,13 @@ func Test_MitmTransport(t *testing.T) {
 	defer mt.UnstubDefaultTransport()
 
 	// mocks
-	mt.MockRequest("GET", "https://example.com").WithResponse(200, nil, "GET OK")
-	mt.MockRequest("GET", "https://example.com/mock").WithResponse(200, nil, "GET MOCK OK")
-	mt.MockRequest("PUT", "https://example.com").WithResponse(204, nil, "PUT OK")
-	mt.MockRequest("PUT", "https://eXaMpLe.com/mock").WithResponse(200, nil, "PUT MOCK OK")
+	mt.MockRequest("GET", mockURL).WithResponse(200, nil, "GET OK")
+	mt.MockRequest("GET", mockURL+"/mock").WithResponse(200, nil, "GET MOCK OK")
+	mt.MockRequest("PUT", mockURL).WithResponse(204, nil, "PUT OK")
+	mt.MockRequest("PUT", mockURL+"/mock").WithResponse(200, nil, "PUT MOCK OK")
 
 	// GET /
-	response, err := http.Get("mitm://example.com")
+	response, err := http.Get(stubURL)
 	assertion.Nil(err)
 	assertion.Equal(200, response.StatusCode)
 
@@ -49,7 +49,7 @@ func Test_MitmTransport(t *testing.T) {
 	assertion.Equal("GET OK", string(b))
 
 	// PUT /
-	request, _ := http.NewRequest("PUT", "mitm://example.com", nil)
+	request, _ := http.NewRequest("PUT", stubURL, nil)
 	response, err = http.DefaultClient.Do(request)
 	assertion.Nil(err)
 	assertion.Equal(204, response.StatusCode)
@@ -61,7 +61,7 @@ func Test_MitmTransport(t *testing.T) {
 	assertion.Equal("PUT OK", string(b))
 
 	// GET /mock
-	response, err = http.Get("mitm://example.com/mock")
+	response, err = http.Get(stubURL + "/mock")
 	assertion.Nil(err)
 	assertion.Equal(200, response.StatusCode)
 
@@ -72,7 +72,7 @@ func Test_MitmTransport(t *testing.T) {
 	assertion.Equal("GET MOCK OK", string(b))
 
 	// PUT /mock
-	request, _ = http.NewRequest("PUT", "mitm://example.cOm/mock", nil)
+	request, _ = http.NewRequest("PUT", stubURL+"/mock", nil)
 	response, err = http.DefaultClient.Do(request)
 	assertion.Nil(err)
 	assertion.Equal(200, response.StatusCode)
@@ -84,10 +84,9 @@ func Test_MitmTransport(t *testing.T) {
 	assertion.Equal("PUT MOCK OK", string(b))
 
 	// real http connection
-	response, err = http.Head("https://example.com/")
-	assertion.Nil(err)
-	assertion.Equal(200, response.StatusCode)
-	assertion.NotEmpty(response.Header.Get("X-Ec-Custom-Error"))
+	response, err = http.Head(stubURL + "/httpmitm")
+	assertion.Contains(err.Error(), ErrRefused.Error())
+	assertion.Nil(response)
 }
 
 func Test_MitmTransportWithoutResponder(t *testing.T) {
@@ -97,12 +96,12 @@ func Test_MitmTransportWithoutResponder(t *testing.T) {
 	defer mt.UnstubDefaultTransport()
 
 	// GET /
-	response, err := http.Get("mitm://example.com")
+	response, err := http.Get(stubURL)
 	assertion.Contains(err.Error(), ErrRefused.Error())
 	assertion.Nil(response)
 
 	// PUT /refuse
-	request, _ := http.NewRequest("PUT", "mitm://example.com/refuse", nil)
+	request, _ := http.NewRequest("PUT", stubURL+"/refuse", nil)
 	response, err = http.DefaultClient.Do(request)
 	assertion.Contains(err.Error(), ErrRefused.Error())
 	assertion.Nil(response)
@@ -115,34 +114,42 @@ func Test_MitmTransportWithTimes(t *testing.T) {
 	defer mt.UnstubDefaultTransport()
 
 	// mocks
-	mt.MockRequest("GET", "http://www.example.com").Times(1).WithResponse(101, nil, "GET OK")
+	mt.MockRequest("GET", mockURL).Times(1).WithResponse(101, nil, "MOCK OK")
 
-	// GET mitm://www.example.com (mocked)
-	response, err := http.Get("mitm://www.example.com")
+	// GET mitm://example.com (mocked)
+	response, err := http.Get(stubURL)
 	assertion.Nil(err)
 	assertion.Equal(101, response.StatusCode)
+	assertion.ReaderContains(response.Body, "MOCK OK")
+	response.Body.Close()
 
-	// GET mitm://www.example.com (exceeded)
-	response, err = http.Get("mitm://www.example.com")
-	assertion.Nil(err)
-	assertion.Equal(200, response.StatusCode)
+	// // GET mitm://example.com (exceeded)
+	// response, err = http.Get(stubURL)
+	// assertion.Nil(err)
+	// assertion.Equal(200, response.StatusCode)
+	// assertion.ReaderContains(response.Body, "GET OK")
+	// response.Body.Close()
 
 	// mocks
-	mt.MockRequest("PUT", "https://example.com/").WithResponse(101, nil, "PUT OK").Times(2)
+	mt.MockRequest("PUT", mockURL).WithResponse(101, nil, "MOCK OK").Times(2)
 
 	// PUT mitm://example.com (mocked)
 	for i := 0; i < 2; i++ {
-		request, _ := http.NewRequest("PUT", "mitm://example.com", nil)
+		request, _ := http.NewRequest("PUT", stubURL, nil)
+
 		response, err := http.DefaultClient.Do(request)
 		assertion.Nil(err)
 		assertion.Equal(101, response.StatusCode)
+		assertion.ReaderContains(response.Body, "MOCK OK")
+		response.Body.Close()
 	}
 
-	// PUT mitm://example.com (exceeded)
-	request, _ := http.NewRequest("PUT", "mitm://example.com", nil)
-	response, err = http.DefaultClient.Do(request)
-	assertion.Nil(err)
-	assertion.Equal(405, response.StatusCode)
+	// // PUT mitm://example.com (exceeded)
+	// request, _ := http.NewRequest("PUT", stubURL, nil)
+	// response, err = http.DefaultClient.Do(request)
+	// assertion.Nil(err)
+	// assertion.Equal(200, response.StatusCode)
+	// assertion.ReaderContains(response.Body, "PUT OK")
 }
 
 func Test_MitmTransportWithAnyTimes(t *testing.T) {
@@ -152,13 +159,16 @@ func Test_MitmTransportWithAnyTimes(t *testing.T) {
 	defer mt.UnstubDefaultTransport()
 
 	// mocks
-	mt.MockRequest("GET", "http://example.com").WithResponse(101, nil, "GET OK").AnyTimes()
+	mt.MockRequest("GET", mockURL).WithResponse(101, nil, "MOCK OK").AnyTimes()
 
 	// GET mitm://example.com
 	for i := 0; i < 10; i++ {
-		response, err := http.Get("mitm://example.com")
+		response, err := http.Get(stubURL)
 		assertion.Nil(err)
 		assertion.Equal(101, response.StatusCode)
+		assertion.ReaderContains(response.Body, "MOCK OK")
+		response.Body.Close()
+
 	}
 }
 
@@ -174,22 +184,17 @@ func Test_MitmTransportWithTimesError(t *testing.T) {
 	}
 
 	// mocks
-	mt.MockRequest("GET", "http://example.com").WithJsonResponse(200, nil, result{
+	mt.MockRequest("GET", mockURL).WithJsonResponse(200, nil, result{
 		Code: 200,
 		Name: "OK",
 	}).Times(3)
 
 	// GET mitm://example.com
 	for i := 0; i < 3; i++ {
-		response, err := http.Get("mitm://example.com")
+		response, err := http.Get(stubURL)
 		assertion.Nil(err)
 		assertion.Equal(200, response.StatusCode)
-
-		b, err := ioutil.ReadAll(response.Body)
-		response.Body.Close()
-
-		assertion.Nil(err)
-		assertion.Equal(`{"code":200,"name":"OK"}`, string(b))
+		assertion.ReaderContains(response.Body, `{"code":200,"name":"OK"}`)
 	}
 }
 
@@ -201,24 +206,30 @@ func Test_MitmTransportPauseAndResume(t *testing.T) {
 	defer mt.UnstubDefaultTransport()
 
 	// mocks
-	mt.MockRequest("GET", "https://example.com/").WithResponse(101, nil, "GET OK").AnyTimes()
+	mt.MockRequest("GET", mockURL).WithResponse(101, nil, "MOCK OK").AnyTimes()
 
 	// response with mocked
-	response, err := http.Get("mitm://example.com")
+	response, err := http.Get(stubURL)
 	assertion.Nil(err)
 	assertion.Equal(101, response.StatusCode)
+	assertion.ReaderContains(response.Body, "MOCK OK")
+	response.Body.Close()
 
 	// paused and response with real github server
 	mt.Pause()
 
-	response, err = http.Get("mitm://example.com")
+	response, err = http.Get(stubURL)
 	assertion.Nil(err)
 	assertion.Equal(200, response.StatusCode)
+	assertion.ReaderContains(response.Body, "GET OK")
+	response.Body.Close()
 
 	// resume and response with mock again
 	mt.Resume()
 
-	response, err = http.Get("mitm://example.com")
+	response, err = http.Get(stubURL)
 	assertion.Nil(err)
 	assertion.Equal(101, response.StatusCode)
+	assertion.ReaderContains(response.Body, "MOCK OK")
+	response.Body.Close()
 }

@@ -20,7 +20,7 @@ func Test_NewResponder(t *testing.T) {
 		"X-Testing":    []string{"testing"},
 	}
 	body := "Hello, world!"
-	rawurl := "https://example.com"
+	rawurl := mockURL
 
 	responder := NewResponder(code, header, body)
 	assertion.Implements((*http.RoundTripper)(nil), responder)
@@ -47,7 +47,7 @@ func Test_NewResponderWithSuppliedContentLength(t *testing.T) {
 		"X-Testing":      []string{"testing"},
 	}
 	body := "Hello, world!"
-	rawurl := "https://example.com"
+	rawurl := mockURL
 
 	responder := NewResponder(code, header, body)
 	request, _ := http.NewRequest("GET", rawurl, nil)
@@ -70,7 +70,7 @@ func Test_NewResponderWithError(t *testing.T) {
 	body := struct {
 		Name string
 	}{"testing"}
-	rawurl := "https://example.com"
+	rawurl := mockURL
 
 	responder := NewResponder(code, header, body)
 	request, _ := http.NewRequest("GET", rawurl, nil)
@@ -90,7 +90,7 @@ func Test_NewJsonResponder(t *testing.T) {
 	body := struct {
 		Name string `json:"name"`
 	}{"testing"}
-	rawurl := "https://example.com"
+	rawurl := mockURL
 	rawbody := `{"name":"testing"}`
 
 	responder := NewJsonResponder(code, header, body)
@@ -117,7 +117,7 @@ func Test_NewJsonResponderWithError(t *testing.T) {
 	body := struct {
 		Ch chan<- bool `json:"channel"`
 	}{make(chan<- bool, 1)}
-	rawurl := "https://example.com"
+	rawurl := mockURL
 
 	responder := NewJsonResponder(code, header, body)
 
@@ -144,7 +144,7 @@ func Test_NewXmlResponder(t *testing.T) {
 		},
 		Name: "testing",
 	}
-	rawurl := "https://exmpale.com"
+	rawurl := mockURL
 	rawbody := `<Responder xmlns="http://xmlns.example.com"><Name>testing</Name></Responder>`
 
 	responder := NewXmlResponder(code, header, body)
@@ -178,7 +178,7 @@ func Test_NewXmlResponderWithError(t *testing.T) {
 		},
 		Ch: make(chan<- bool, 1),
 	}
-	rawurl := "https://exmaple.com"
+	rawurl := mockURL
 
 	responder := NewXmlResponder(code, header, body)
 
@@ -196,12 +196,13 @@ func Test_NewCalleeResponder(t *testing.T) {
 		"X-Testing":    []string{"testing"},
 	}
 	body := "Hello, world!"
+	rawurl := mockURL
 
 	responder := NewCalleeResponder(func(r *http.Request) (int, http.Header, io.Reader, error) {
 		return code, header, strings.NewReader(body), nil
 	})
 
-	request, _ := http.NewRequest("GET", "http://example.com", nil)
+	request, _ := http.NewRequest("GET", rawurl, nil)
 	response, err := responder.RoundTrip(request)
 	assertion.Nil(err)
 	assertion.Equal(code, response.StatusCode)
@@ -220,12 +221,13 @@ func Test_NewCalleeResponderWithError(t *testing.T) {
 		"X-Testing":    []string{"testing"},
 	}
 	body := "Hello, world!"
+	rawurl := mockURL
 
 	responder := NewCalleeResponder(func(r *http.Request) (int, http.Header, io.Reader, error) {
 		return code, header, strings.NewReader(body), ErrUnsupport
 	})
 
-	request, _ := http.NewRequest("GET", "http://example.com", nil)
+	request, _ := http.NewRequest("GET", rawurl, nil)
 	response, err := responder.RoundTrip(request)
 	assertion.EqualError(ErrUnsupport, err.Error())
 	assertion.Nil(response)

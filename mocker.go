@@ -16,9 +16,9 @@ const (
 )
 
 var (
-	// DefaultMatcher is the default implementation of RequestMatcher and is used by all mocks without supplied matcher.
-	// First, it compares request by fully quoted url string;
-	// Second, it only compares uri by trim string after separator ? in fallback case.
+	// DefaultMatcher is the default implementation of RequestMatcher and is used by all mocks without matcher supplied.
+	// 	First, it compares request by fully quoted url string;
+	// 	Second, it only compares uri by trim string after separator ? in fallback case.
 	DefaultMatcher RequestMatcher = func(r *http.Request, urlobj *url.URL) bool {
 		// case-insensitive
 
@@ -39,6 +39,7 @@ var (
 // RequestMatcher is a callback for detecting whether request matches the mocked url
 type RequestMatcher func(r *http.Request, urlobj *url.URL) bool
 
+// Mocker defines a request with stubbed response
 type Mocker struct {
 	mux sync.Mutex
 
@@ -78,8 +79,19 @@ func (m *Mocker) IsRequestMatched(req *http.Request) bool {
 	return m.matcher(req, urlobj)
 }
 
-func (m *Mocker) IsTimesMatched() bool {
-	return m.expectedTimes == MockUnlimitedTimes || m.expectedTimes == m.invokedTimes
+func (m *Mocker) IsTimesUnlimited() bool {
+	return m.expectedTimes == MockUnlimitedTimes
+}
+
+func (m *Mocker) IsTimesExceed() bool {
+	if m.IsTimesUnlimited() {
+		return false
+	}
+
+	m.mux.Lock()
+	defer m.mux.Unlock()
+
+	return m.invokedTimes > m.expectedTimes
 }
 
 func (m *Mocker) Scheme() string {
@@ -91,37 +103,41 @@ func (m *Mocker) Times() (expected, invoked int) {
 }
 
 func (m *Mocker) SetMatcher(matcher RequestMatcher) {
+	m.mux.Lock()
+	defer m.mux.Unlock()
+
 	m.matcher = matcher
 }
 
 func (m *Mocker) SetExpectedTimes(expected int) {
+	m.mux.Lock()
+	defer m.mux.Unlock()
+
 	m.expectedTimes = expected
 }
 
 func (m *Mocker) RoundTrip(req *http.Request) (*http.Response, error) {
-	m.mux.Lock()
-	defer m.mux.Unlock()
-
 	// is mocked?
 	if !m.IsRequestMatched(req) {
 		return httpDefaultResponder.RoundTrip(req)
 	}
 
-	// is an unlimited mock?
-	if m.expectedTimes == MockUnlimitedTimes {
-		m.invokedTimes += 1
+	m.mux.Lock()
+	defer m.mux.Unlock()
 
+	m.invokedTimes++
+
+	switch {
+	case m.IsTimesUnlimited(): // is an unlimited mocker?
 		return m.responder.RoundTrip(req)
-	}
 
-	// is mock times reached?
-	if m.invokedTimes == m.expectedTimes {
-		req.URL.Scheme = m.originScheme
+	case m.invokedTimes > m.expectedTimes: // is expected times exceed?
+		if m.originScheme != "" {
+			req.URL.Scheme = m.originScheme
+		}
 
 		return httpDefaultResponder.RoundTrip(req)
 	}
-
-	m.invokedTimes += 1
 
 	return m.responder.RoundTrip(req)
 }
