@@ -2,6 +2,8 @@ package httpmitm
 
 import (
 	"bytes"
+	"encoding/json"
+	"encoding/xml"
 	"io"
 	"net/url"
 	"os"
@@ -63,6 +65,34 @@ func NewTestdataFromIface(v interface{}) (td *Testdata, err error) {
 		td = &Testdata{
 			r: reader,
 			w: bytes.NewBufferString(os.DevNull),
+		}
+	}
+
+	return
+}
+
+func NewJsonTestdataFromIface(v interface{}) (td *Testdata, err error) {
+	td, err = NewTestdataFromIface(v)
+	if err == ErrUnsupport {
+		var buf []byte
+
+		buf, err = json.Marshal(v)
+		if err == nil {
+			td, err = NewTestdataFromIface(buf)
+		}
+	}
+
+	return
+}
+
+func NewXmlTestdataFromIface(v interface{}) (td *Testdata, err error) {
+	td, err = NewTestdataFromIface(v)
+	if err == ErrUnsupport {
+		var buf []byte
+
+		buf, err = xml.Marshal(v)
+		if err == nil {
+			td, err = NewTestdataFromIface(buf)
 		}
 	}
 
