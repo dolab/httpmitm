@@ -1,8 +1,10 @@
 package httpmitm
 
 import (
+	"bytes"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net/http"
 	"net/url"
 	"path/filepath"
@@ -255,7 +257,29 @@ func (mitm *MitmTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 		// adjust request url scheme
 		req.URL.Scheme = mocker.Scheme()
 
-		return httpDefaultResponder.RoundTrip(req)
+		resp, err := httpDefaultResponder.RoundTrip(req)
+		if err != nil {
+			return resp, err
+		}
+
+		responder, ok := mocker.responder.(*Responder)
+		if !ok {
+			return resp, err
+		}
+
+		data, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			return resp, err
+		}
+		resp.Body.Close()
+		resp.Body = ioutil.NopCloser(bytes.NewReader(data))
+
+		// invoke testdata writer if defined
+		if _, werr := responder.Write(data); werr != nil {
+			mitm.testing.Logf("Write response data with: %v", werr)
+		}
+
+		return resp, err
 	}
 
 	return mocker.RoundTrip(req)

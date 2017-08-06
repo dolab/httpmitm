@@ -83,6 +83,14 @@ func NewCalleeResponder(callee func(r *http.Request) (code int, header http.Head
 	}
 }
 
+func (r *Responder) Write(p []byte) (int, error) {
+	if r.body.Write != nil {
+		return r.body.Write(p)
+	}
+
+	return len(p), nil
+}
+
 func (r *Responder) RoundTrip(req *http.Request) (*http.Response, error) {
 	// apply callee if exists
 	if r.callee != nil {
