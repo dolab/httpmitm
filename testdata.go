@@ -66,6 +66,10 @@ func NewTestdataFromIface(v interface{}) (td *Testdata, err error) {
 			r: reader,
 			w: bytes.NewBufferString(os.DevNull),
 		}
+
+		if w, ok := v.(io.Writer); ok {
+			td.w = w
+		}
 	}
 
 	return
