@@ -7,8 +7,9 @@ import (
 )
 
 var (
-	RefusedResponser = NewResponser(NewRefusedResponder(), MockWildcard, MockUnlimitedTimes)
-	TimeoutResponser = NewResponser(NewTimeoutResponder(), MockWildcard, MockUnlimitedTimes)
+	NotFoundResponser = NewResponser(NewNotFoundResponder(), MockWildcard, MockUnlimitedTimes)
+	RefusedResponser  = NewResponser(NewRefusedResponder(), MockWildcard, MockUnlimitedTimes)
+	TimeoutResponser  = NewResponser(NewTimeoutResponder(), MockWildcard, MockUnlimitedTimes)
 )
 
 // Responser is an container of mocks for the same method and domain

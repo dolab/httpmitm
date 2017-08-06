@@ -124,8 +124,19 @@ func (r *Responder) RoundTrip(req *http.Request) (*http.Response, error) {
 	return response, nil
 }
 
+// NotFoundResponder represents a connection with 404 reponse.
+type NotFoundResponder struct{}
+
+func NewNotFoundResponder() *NotFoundResponder {
+	return &NotFoundResponder{}
+}
+
+func (nf *NotFoundResponder) RoundTrip(req *http.Request) (*http.Response, error) {
+	return nil, ErrNotFound
+}
+
 // RefusedResponder represents a connection failure response of mocked request.
-// It's used as default Responder for empty mock.
+// NOTE: It's used as default Responder for empty mock.
 type RefusedResponder struct{}
 
 func NewRefusedResponder() *RefusedResponder {
