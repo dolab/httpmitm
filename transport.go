@@ -258,13 +258,13 @@ func (mitm *MitmTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 		req.URL.Scheme = mocker.Scheme()
 
 		resp, err := httpDefaultResponder.RoundTrip(req)
-		if err != nil || resp.StatusCode/100 != 2 {
+		if err != nil {
 			return resp, err
 		}
 
-		// try to write back response data if response code is 2xx
+		// try to write back response data if response code is 2xx or equal to expected
 		responder, ok := mocker.responder.(*Responder)
-		if !ok {
+		if !ok || (resp.StatusCode/100 != 2 && resp.StatusCode != responder.code) {
 			return resp, err
 		}
 
@@ -276,7 +276,7 @@ func (mitm *MitmTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 		resp.Body = ioutil.NopCloser(bytes.NewReader(data))
 
 		// invoke testdata writer if defined
-		if _, werr := responder.Write(data); werr != nil {
+		if werr := responder.Write(req.Method, req.URL, data); werr != nil {
 			mitm.testing.Logf("Write %s %s with: %v", req.Method, req.URL.String(), werr)
 		}
 

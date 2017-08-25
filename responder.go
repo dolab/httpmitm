@@ -5,6 +5,7 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
+	"net/url"
 	"strconv"
 )
 
@@ -80,41 +81,48 @@ func NewXmlResponder(code int, header http.Header, body interface{}) http.RoundT
 func NewCalleeResponder(callee func(r *http.Request) (code int, header http.Header, body io.Reader, err error)) http.RoundTripper {
 	return &Responder{
 		callee: callee,
+		body:   NewTestdata(bytes.NewReader([]byte{})),
 	}
 }
 
-func (r *Responder) Write(p []byte) (int, error) {
-	if r.body.Write != nil {
-		return r.body.Write(p)
-	}
+func (r *Responder) Write(method string, urlobj *url.URL, data []byte) error {
+	key := r.body.Key(method, urlobj)
 
-	return len(p), nil
+	return r.body.Write(key, data)
 }
 
 func (r *Responder) RoundTrip(req *http.Request) (*http.Response, error) {
-	// apply callee if exists
-	if r.callee != nil {
-		var reader io.Reader
-
-		r.code, r.header, reader, r.err = r.callee(req)
-
-		if r.err == nil {
-			r.body, r.err = NewTestdataFromIface(reader)
-		}
-	}
-
+	// is there an error?
 	if r.err != nil {
 		return nil, r.err
 	}
 
-	data, err := ioutil.ReadAll(r.body)
+	key := r.body.Key(req.Method, req.URL)
+
+	// apply callee if exists
+	if r.callee != nil {
+		var (
+			reader io.Reader
+		)
+
+		r.code, r.header, reader, r.err = r.callee(req)
+		if r.err != nil {
+			return nil, r.err
+		}
+
+		// sync reader data returned by callee to r.body
+		td, ok := r.body.(*Testdata)
+		if ok {
+			td.reader = reader
+		}
+	}
+
+	data, err := r.body.Read(key)
 	if err != nil {
 		return nil, err
 	}
 
 	// push back for response reader
-	r.body, _ = NewTestdataFromIface(data)
-
 	response := &http.Response{
 		Status:     strconv.Itoa(r.code),
 		StatusCode: r.code,

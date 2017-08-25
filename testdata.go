@@ -5,39 +5,75 @@ import (
 	"encoding/json"
 	"encoding/xml"
 	"io"
+	"io/ioutil"
 	"net/url"
-	"os"
 	"strings"
 )
 
 type Testdataer interface {
-	io.ReadWriter
+	Key(method string, urlobj *url.URL) (key string)
+	Read(key string) (data []byte, err error)
+	Write(key string, data []byte) (err error)
 }
 
 type Testdata struct {
-	r io.Reader
-	w io.Writer
+	tder   Testdataer
+	reader io.Reader
 }
 
-func NewTestdata(rw io.ReadWriter) *Testdata {
+func NewTestdata(r io.Reader) *Testdata {
 	return &Testdata{
-		r: rw.(io.Reader),
-		w: rw.(io.Writer),
+		reader: r,
 	}
 }
 
-func (td *Testdata) Read(p []byte) (n int, err error) {
-	return td.r.Read(p)
+func (td *Testdata) Key(method string, urlobj *url.URL) (key string) {
+	if td.tder != nil {
+		return td.tder.Key(method, urlobj)
+	}
+
+	// default to "METHOD /path/to/resource"
+	key = method + " " + urlobj.Path
+	return
 }
 
-func (td *Testdata) Write(p []byte) (n int, err error) {
-	return td.w.Write(p)
+func (td *Testdata) Read(key string) (data []byte, err error) {
+	if td.tder != nil {
+		return td.tder.Read(key)
+	}
+
+	if td.reader != nil {
+		data, err = ioutil.ReadAll(td.reader)
+
+		// NOTE: reset reader for internal!
+		td.reader = ioutil.NopCloser(bytes.NewReader(data))
+	} else {
+		err = io.EOF
+	}
+
+	return
+}
+
+func (td *Testdata) Write(key string, data []byte) (err error) {
+	if td.tder != nil {
+		return td.tder.Write(key, data)
+	}
+
+	// NOTE: ignore for internal
+
+	return
 }
 
 func NewTestdataFromIface(v interface{}) (td *Testdata, err error) {
-	var reader io.Reader
+	var (
+		tder   Testdataer
+		reader io.Reader
+	)
 
 	switch v.(type) {
+	case Testdataer:
+		tder, _ = v.(Testdataer)
+
 	case io.Reader:
 		reader, _ = v.(io.Reader)
 
@@ -61,15 +97,13 @@ func NewTestdataFromIface(v interface{}) (td *Testdata, err error) {
 
 	}
 
-	if err == nil {
-		td = &Testdata{
-			r: reader,
-			w: bytes.NewBufferString(os.DevNull),
-		}
+	if err != nil {
+		return
+	}
 
-		if w, ok := v.(io.Writer); ok {
-			td.w = w
-		}
+	td = &Testdata{
+		tder:   tder,
+		reader: reader,
 	}
 
 	return
