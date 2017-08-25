@@ -199,11 +199,10 @@ func Test_MitmTransportWithTimesError(t *testing.T) {
 }
 
 func Test_MitmTransportPauseAndResume(t *testing.T) {
-	assertion := assert.New(t)
-
-	mt := NewMitmTransport()
-	mt.StubDefaultTransport(t)
+	mt := NewMitmTransport().StubDefaultTransport(t)
 	defer mt.UnstubDefaultTransport()
+
+	assertion := assert.New(t)
 
 	// mocks
 	mt.MockRequest("GET", mockURL).WithResponse(101, nil, "MOCK OK").AnyTimes()
@@ -232,4 +231,20 @@ func Test_MitmTransportPauseAndResume(t *testing.T) {
 	assertion.Equal(101, response.StatusCode)
 	assertion.ReaderContains(response.Body, "MOCK OK")
 	response.Body.Close()
+}
+
+func Test_MitmTransportWithTestdataer(t *testing.T) {
+	mt := NewMitmTransport().StubDefaultTransport(t)
+	defer mt.UnstubDefaultTransport()
+
+	assertion := assert.New(t)
+
+	// mocks
+	mt.MockRequest("GET", mockURL).WithResponse(200, nil, apidata)
+
+	// response with mocked
+	response, err := http.Get(stubURL)
+	assertion.Nil(err)
+	assertion.Equal(200, response.StatusCode)
+	assertion.ReaderContains(response.Body, "Hello, httpmitm!")
 }

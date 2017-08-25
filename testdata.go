@@ -33,7 +33,12 @@ func (td *Testdata) Key(method string, urlobj *url.URL) (key string) {
 	}
 
 	// default to "METHOD /path/to/resource"
-	key = method + " " + urlobj.Path
+	abspath := urlobj.Path
+	if abspath == "" {
+		abspath = "/"
+	}
+
+	key = method + " " + abspath
 	return
 }
 
