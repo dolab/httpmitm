@@ -157,7 +157,7 @@ func Test_MitmTransportPauseAndResume(t *testing.T) {
 }
 ```
 
-## Use with `Testdataer`
+## Using `Testdataer`
 
 *httpmitm* supports custom response by implementing a `Testdataer` interface.
 
@@ -200,7 +200,7 @@ func (data *ApiData) Write(key string, data []byte) (err error) {
 }
 ```
 
-- using with testing
+- using `ApiData`
 
 ```go
 import (
@@ -235,10 +235,11 @@ func Test_MitmTransportWithTestdataer(t *testing.T) {
 ```
 
 ## TODO
-[ ] support wildcard pattern with resource url
-[ x ] support callback response type
-[ ] support named params for callback response
-[ x ] support custom response data driver
+
+- [ ] support wildcard pattern with resource url
+- [x] support callback response type
+- [ ] support named params for callback response
+- [x] support custom response data driver
 
 ## Author
 [Spring MC](https://twitter.com/mcspring)
