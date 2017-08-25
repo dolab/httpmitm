@@ -17,14 +17,14 @@ var (
 type Responder struct {
 	code   int
 	header http.Header
-	body   io.Reader
+	body   Testdataer
 	err    error
 	callee func(r *http.Request) (code int, header http.Header, reader io.Reader, err error)
 }
 
 // NewResponder returns Responder with provided data
 func NewResponder(code int, header http.Header, body interface{}) http.RoundTripper {
-	reader, err := Helpers.NewReaderFromIface(body)
+	tder, err := NewTestdataFromIface(body)
 
 	if header == nil {
 		header = http.Header{}
@@ -33,14 +33,14 @@ func NewResponder(code int, header http.Header, body interface{}) http.RoundTrip
 	return &Responder{
 		code:   code,
 		header: header,
-		body:   reader,
+		body:   tder,
 		err:    err,
 	}
 }
 
 // NewJsonResponder returns Responder with json.Marshal(body) format
 func NewJsonResponder(code int, header http.Header, body interface{}) http.RoundTripper {
-	reader, err := Helpers.NewJsonReaderFromIface(body)
+	tder, err := NewJsonTestdataFromIface(body)
 
 	if header == nil {
 		header = http.Header{}
@@ -52,14 +52,14 @@ func NewJsonResponder(code int, header http.Header, body interface{}) http.Round
 	return &Responder{
 		code:   code,
 		header: header,
-		body:   reader,
+		body:   tder,
 		err:    err,
 	}
 }
 
 // NewXmlResponder returns Responder with xml.Marshal(body) format
 func NewXmlResponder(code int, header http.Header, body interface{}) http.RoundTripper {
-	reader, err := Helpers.NewXmlReaderFromIface(body)
+	tder, err := NewXmlTestdataFromIface(body)
 
 	if header == nil {
 		header = http.Header{}
@@ -71,7 +71,7 @@ func NewXmlResponder(code int, header http.Header, body interface{}) http.RoundT
 	return &Responder{
 		code:   code,
 		header: header,
-		body:   reader,
+		body:   tder,
 		err:    err,
 	}
 }
@@ -83,50 +83,68 @@ func NewCalleeResponder(callee func(r *http.Request) (code int, header http.Head
 	}
 }
 
+func (r *Responder) Write(p []byte) (int, error) {
+	if r.body.Write != nil {
+		return r.body.Write(p)
+	}
+
+	return len(p), nil
+}
+
 func (r *Responder) RoundTrip(req *http.Request) (*http.Response, error) {
 	// apply callee if exists
 	if r.callee != nil {
-		r.code, r.header, r.body, r.err = r.callee(req)
+		var reader io.Reader
+
+		r.code, r.header, reader, r.err = r.callee(req)
+
+		if r.err == nil {
+			r.body, r.err = NewTestdataFromIface(reader)
+		}
 	}
 
 	if r.err != nil {
 		return nil, r.err
 	}
 
+	data, err := ioutil.ReadAll(r.body)
+	if err != nil {
+		return nil, err
+	}
+
+	// push back for response reader
+	r.body, _ = NewTestdataFromIface(data)
+
 	response := &http.Response{
 		Status:     strconv.Itoa(r.code),
 		StatusCode: r.code,
 		Header:     r.header,
+		Body:       ioutil.NopCloser(bytes.NewReader(data)),
 		Request:    req,
 	}
 
-	if body, ok := r.body.(io.ReadCloser); ok {
-		response.Body = body
-	} else {
-		response.Body = ioutil.NopCloser(r.body)
-	}
-
-	b, err := ioutil.ReadAll(response.Body)
-	if err != nil {
-		return nil, err
-	}
-	response.Body.Close()
-
 	// adjust response content length header if missed
 	if _, ok := response.Header["Content-Length"]; !ok {
-		response.Header.Add("Content-Length", strconv.Itoa(len(b)))
+		response.Header.Add("Content-Length", strconv.Itoa(len(data)))
 	}
 	response.ContentLength, _ = strconv.ParseInt(response.Header.Get("Content-Length"), 10, 64)
-
-	// pull back for response reader
-	r.body = ioutil.NopCloser(bytes.NewReader(b))
-	response.Body = ioutil.NopCloser(bytes.NewReader(b))
 
 	return response, nil
 }
 
+// NotFoundResponder represents a connection with 404 reponse.
+type NotFoundResponder struct{}
+
+func NewNotFoundResponder() *NotFoundResponder {
+	return &NotFoundResponder{}
+}
+
+func (nf *NotFoundResponder) RoundTrip(req *http.Request) (*http.Response, error) {
+	return nil, ErrNotFound
+}
+
 // RefusedResponder represents a connection failure response of mocked request.
-// It's used as default Responder for empty mock.
+// NOTE: It's used as default Responder for empty mock.
 type RefusedResponder struct{}
 
 func NewRefusedResponder() *RefusedResponder {
