@@ -249,7 +249,7 @@ func (mitm *MitmTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 
 	mocker := response.Find(req.URL.Path)
 	if mocker == nil {
-		return RefusedResponser.RoundTrip(req)
+		return NotFoundResponser.RoundTrip(req)
 	}
 
 	// direct connection for paused
@@ -258,10 +258,11 @@ func (mitm *MitmTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 		req.URL.Scheme = mocker.Scheme()
 
 		resp, err := httpDefaultResponder.RoundTrip(req)
-		if err != nil {
+		if err != nil || resp.StatusCode/100 != 2 {
 			return resp, err
 		}
 
+		// try to write back response data if response code is 2xx
 		responder, ok := mocker.responder.(*Responder)
 		if !ok {
 			return resp, err
@@ -276,7 +277,7 @@ func (mitm *MitmTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 
 		// invoke testdata writer if defined
 		if _, werr := responder.Write(data); werr != nil {
-			mitm.testing.Logf("Write response data with: %v", werr)
+			mitm.testing.Logf("Write %s %s with: %v", req.Method, req.URL.String(), werr)
 		}
 
 		return resp, err
