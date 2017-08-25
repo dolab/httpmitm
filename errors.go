@@ -11,4 +11,5 @@ var (
 	ErrRefused    = errors.New("Connection refused. Please making sure the request has been mocked!")
 	ErrTimes      = errors.New("Invalid value of times. It must be non-negative integer value.")
 	ErrInvocation = errors.New("Not an chained invocation. Please invoking MockRequest(method, url) first.")
+	ErrResponse   = errors.New("Not an chained response. Please invoking WithResponser(code, header, body) first.")
 )

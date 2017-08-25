@@ -97,6 +97,10 @@ func (r *Responder) RoundTrip(req *http.Request) (*http.Response, error) {
 		return nil, r.err
 	}
 
+	if r.body == nil {
+		return nil, ErrResponse
+	}
+
 	key := r.body.Key(req.Method, req.URL)
 
 	// apply callee if exists
