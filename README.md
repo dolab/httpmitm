@@ -19,8 +19,7 @@ import (
 
 func Test_MitmTransport(t *testing.T) {
     // stub http.DefaultTransport as early as possible
-    mt := httpmitm.NewMitmTransport()
-    mt.StubDefaultTransport(t)
+    mt := httpmitm.NewMitmTransport().StubDefaultTransport(t)
     defer mt.UnstubDefaultTransport()
 
     // mocks, your can use http, https and mitm scheme here
@@ -86,8 +85,7 @@ func Test_MitmTransport(t *testing.T) {
 
 func Test_MitmTransportWithTimes(t *testing.T) {
     // stub http.DefaultTransport as early as possible
-    mt := NewMitmTransport()
-    mt.StubDefaultTransport(t)
+    mt := NewMitmTransport().StubDefaultTransport(t)
     defer mt.UnstubDefaultTransport()
 
     // mock once
@@ -130,11 +128,10 @@ func Test_MitmTransportWithTimes(t *testing.T) {
 }
 
 func Test_MitmTransportPauseAndResume(t *testing.T) {
-    assertion := assert.New(t)
-
-    mt := NewMitmTransport()
-    mt.StubDefaultTransport(t)
+    mt := NewMitmTransport().StubDefaultTransport(t)
     defer mt.UnstubDefaultTransport()
+
+    assertion := assert.New(t)
 
     // mocks
     mt.MockRequest("GET", "https://github.com").WithResponse(101, nil, "GET OK").AnyTimes()
@@ -160,10 +157,88 @@ func Test_MitmTransportPauseAndResume(t *testing.T) {
 }
 ```
 
+## Use with `Testdataer`
+
+*httpmitm* supports custom response by implementing a `Testdataer` interface.
+
+- implements `Testdataer`
+
+```go
+// ApiData implements Testdataer
+type ApiData struct {
+    contents map[string][]byte
+}
+
+func NewApiData(data map[string][]byte) *ApiData {
+    return &ApiData{
+        contents: data,
+    }
+}
+
+func (data *ApiData) Key(method string, urlobj *url.URL) (key string) {
+    abspath := urlobj.Path
+    if abspath == "" {
+        abspath = "/"
+    }
+
+    return fmt.Sprintf("%s %s", method, abspath)
+}
+
+func (data *ApiData) Read(key string) (data []byte, err error) {
+    data, ok := data.contents[key]
+    if !ok {
+        err = errors.New("Not found")
+    }
+
+    return
+}
+
+func (data *ApiData) Write(key string, data []byte) (err error) {
+    data.contents[key] = data
+
+    return nil
+}
+```
+
+- using with testing
+
+```go
+import (
+    "testing"
+
+    "github.com/dolab/httpmitm"
+    "github.com/golib/assert"
+)
+
+// usage
+var (
+    api = NewApiData(map[string][]byte{
+        "GET /": []byte{"Hello, httpmitm!"},
+    })
+)
+
+func Test_MitmTransportWithTestdataer(t *testing.T) {
+	mt := httpmitm.NewMitmTransport().StubDefaultTransport(t)
+	defer mt.UnstubDefaultTransport()
+
+	assertion := assert.New(t)
+
+	// mocks
+	mt.MockRequest("GET", "http://example.com").WithResponse(200, nil, apidata)
+
+	// response with mocked
+	response, err := http.Get("mitm://example.com")
+	assertion.Nil(err)
+	assertion.Equal(200, response.StatusCode)
+	assertion.ReaderContains(response.Body, "Hello, httpmitm!")
+}
+```
+
 ## TODO
-- support wildcard pattern with resource url
-- support callback response type
-- support named params for callback response
+[ ] support wildcard pattern with resource url
+[ x ] support callback response type
+[ ] support named params for callback response
+[ x ] support custom response data driver
 
 ## Author
 [Spring MC](https://twitter.com/mcspring)
