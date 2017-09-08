@@ -309,6 +309,30 @@ func (mitm *MitmTransport) Resume() {
 	mitm.mux.Unlock()
 }
 
+func (mitm *MitmTransport) PrettyPrint() {
+	buf := bytes.NewBuffer(nil)
+	buf.WriteString("stubs<map[string]&httpmitm.Responder>{\n")
+	for key, stub := range mitm.stubs {
+		buf.WriteString(`    "` + key + `": &httpmitm.Responder{` + "\n")
+		buf.WriteString(`        mocks<map[string]&httpmitm.Mocker>{` + "\n")
+		for subkey, mock := range stub.mocks {
+			tmp := fmt.Sprintf("%#v", mock)
+			tmp = strings.Replace(tmp, `sync.Mutex{state:0, sema:0x0}`, "sync.Mutex()", -1)
+			tmp = strings.Replace(tmp, "{", "{\n                ", -1)
+			tmp = strings.Replace(tmp, ", ", ",\n                ", -1)
+			tmp = strings.Replace(tmp, "}", "\n            }", -1)
+			tmp = strings.Replace(tmp, "sync.Mutex()", `sync.Mutex{state:0, sema:0x0}`, -1)
+
+			buf.WriteString(`            "` + subkey + `": ` + tmp + "\n")
+		}
+		buf.WriteString(`        }` + "\n")
+		buf.WriteString(`    }` + "\n")
+	}
+	buf.WriteString("\n}\n")
+
+	println(buf.String())
+}
+
 func (mitm *MitmTransport) ensureChained() {
 	if mitm.lastMockedMethod == "" || mitm.lastMockedURL == "" {
 		panic(ErrInvocation.Error())
