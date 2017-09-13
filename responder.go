@@ -118,6 +118,13 @@ func (r *Responder) RoundTrip(req *http.Request) (*http.Response, error) {
 		td, ok := r.body.(*Testdata)
 		if ok {
 			td.reader = reader
+		} else {
+			td, r.err = NewTestdataFromIface(reader)
+			if r.err != nil {
+				return nil, r.err
+			}
+
+			r.body = td
 		}
 	}
 
@@ -137,7 +144,7 @@ func (r *Responder) RoundTrip(req *http.Request) (*http.Response, error) {
 
 	// adjust response content length header if missed
 	if _, ok := response.Header["Content-Length"]; !ok {
-		response.Header.Add("Content-Length", strconv.Itoa(len(data)))
+		response.Header.Add("Content-Length", strconv.FormatInt(int64(len(data)), 10))
 	}
 	response.ContentLength, _ = strconv.ParseInt(response.Header.Get("Content-Length"), 10, 64)
 
