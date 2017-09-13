@@ -41,7 +41,7 @@ type RequestMatcher func(r *http.Request, urlobj *url.URL) bool
 
 // Mocker defines a request with stubbed response
 type Mocker struct {
-	mux sync.Mutex
+	mux sync.RWMutex
 
 	responder     http.RoundTripper
 	matcher       RequestMatcher
@@ -88,8 +88,8 @@ func (m *Mocker) IsTimesExceed() bool {
 		return false
 	}
 
-	m.mux.Lock()
-	defer m.mux.Unlock()
+	m.mux.RLock()
+	defer m.mux.RUnlock()
 
 	return m.invokedTimes > m.expectedTimes
 }
@@ -118,9 +118,13 @@ func (m *Mocker) SetExpectedTimes(expected int) {
 
 func (m *Mocker) RoundTrip(req *http.Request) (*http.Response, error) {
 	// is mocked?
+	m.mux.RLock()
 	if !m.IsRequestMatched(req) {
+		m.mux.RUnlock()
+
 		return httpDefaultResponder.RoundTrip(req)
 	}
+	m.mux.RUnlock()
 
 	m.mux.Lock()
 	defer m.mux.Unlock()

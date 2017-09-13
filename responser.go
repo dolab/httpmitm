@@ -28,8 +28,8 @@ func NewResponser(responder http.RoundTripper, rawurl string, times int) *Respon
 	return r.New(responder, rawurl, times)
 }
 
-// New adds new mocker to *Responser with rawurl's path.
-// NOTE: it may overwrite existed mocker with the same parsed path.
+// New registers a mocker to *Responser with rawurl's path.
+// NOTE: it may overwrite existed mocker with the same request path.
 func (r *Responser) New(responder http.RoundTripper, rawurl string, times int) *Responser {
 	r.mux.Lock()
 	defer r.mux.Unlock()
@@ -39,12 +39,12 @@ func (r *Responser) New(responder http.RoundTripper, rawurl string, times int) *
 		panic(err.Error())
 	}
 
-	path := urlobj.Path
-	if path == "" {
-		path = "/"
+	urlpath := urlobj.Path
+	if urlpath == "" {
+		urlpath = "/"
 	}
 
-	r.mocks[path] = &Mocker{
+	r.mocks[urlpath] = &Mocker{
 		responder:     responder,
 		matcher:       DefaultMatcher,
 		rawurl:        rawurl,
@@ -82,28 +82,28 @@ func (r *Responser) Mocks() map[string]*Mocker {
 }
 
 // Find resolves mocker releated with the path, its using following steps:
-// 	1, try wildcard, e.g. *
-// 	2, try path, e.g. /user
-// 	3, try /, known as root path
+// 	1, try path, e.g. /user
+// 	2, try /, known as root path
+// 	3, try wildcard, e.g. *
 // NOTE: It returns mocker of the root path default if exists
-func (r *Responser) Find(path string) *Mocker {
+func (r *Responser) Find(urlpath string) *Mocker {
 	r.mux.RLock()
 	defer r.mux.RUnlock()
 
-	// first, try wildcard
-	mocker, ok := r.mocks[MockWildcard]
+	// first, try request path
+	mocker, ok := r.mocks[urlpath]
 	if ok {
 		return mocker
 	}
 
-	// second, try request path
-	mocker, ok = r.mocks[path]
+	// second, try root path
+	mocker, ok = r.mocks["/"]
 	if ok {
 		return mocker
 	}
 
-	// fallback to root path
-	return r.mocks["/"]
+	// third, try wildcard
+	return r.mocks[MockWildcard]
 }
 
 // FindByURL returns mocker of url path
@@ -121,7 +121,7 @@ func (r *Responser) FindByRawURL(rawurl string) *Mocker {
 	return r.FindByURL(urlobj)
 }
 
-// RoundTrip implements http.Roundtripper
+// RoundTrip implements http.RoundTripper
 func (r *Responser) RoundTrip(req *http.Request) (*http.Response, error) {
 	mocker := r.Find(req.URL.Path)
 	if mocker == nil {
