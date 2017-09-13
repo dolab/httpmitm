@@ -2,6 +2,7 @@ package httpmitm
 
 import (
 	"bytes"
+	"compress/gzip"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -9,6 +10,7 @@ import (
 	"net/url"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -268,16 +270,44 @@ func (mitm *MitmTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 			return resp, err
 		}
 
-		data, err := ioutil.ReadAll(resp.Body)
-		if err != nil {
-			return resp, err
+		var (
+			data []byte
+		)
+
+		switch resp.Header.Get("Content-Encoding") {
+		case "gzip":
+			gzipReader, gzipErr := gzip.NewReader(resp.Body)
+			if gzipErr != nil {
+				return resp, gzipErr
+			}
+
+			data, err = ioutil.ReadAll(gzipReader)
+			if err != nil {
+				return resp, err
+			}
+			gzipReader.Close()
+
+			// reset response header with for new data
+			resp.Header.Del("Content-Encoding")
+			resp.Header.Set("Content-Length", strconv.FormatInt(int64(len(data)), 10))
+
+		default:
+			data, err = ioutil.ReadAll(resp.Body)
+			if err != nil {
+				return resp, err
+			}
+			resp.Body.Close()
+
 		}
-		resp.Body.Close()
+
+		// rewrite response body for client
 		resp.Body = ioutil.NopCloser(bytes.NewReader(data))
 
-		// invoke testdata writer if defined
+		// invoke testdata writer
 		if werr := responder.Write(req.Method, req.URL, data); werr != nil {
-			mitm.testing.Logf("Write %s %s with: %v", req.Method, req.URL.String(), werr)
+			mitm.testing.Logf("Response writes %s %s with: %v", req.Method, req.URL.String(), werr)
+		} else {
+			mitm.testing.Logf("Response write %s %s OK!", req.Method, req.URL.String())
 		}
 
 		return resp, err
