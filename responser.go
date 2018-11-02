@@ -56,6 +56,11 @@ func (r *Responser) New(responder http.RoundTripper, rawurl string, times int) *
 	return r
 }
 
+// Mocks returns all mockers of the *Responser
+func (r *Responser) Mocks() map[string]*Mocker {
+	return r.mocks
+}
+
 // SetMatcherByRawURL changes request matcher of mocker releated with given rawurl's path
 func (r *Responser) SetMatcherByRawURL(rawurl string, matcher RequestMatcher) {
 	mocker := r.FindByRawURL(rawurl)
@@ -74,11 +79,6 @@ func (r *Responser) SetExpectedTimesByRawURL(rawurl string, expected int) {
 	}
 
 	mocker.SetExpectedTimes(expected)
-}
-
-// Mocks returns all mockers of the *Responser
-func (r *Responser) Mocks() map[string]*Mocker {
-	return r.mocks
 }
 
 // Find resolves mocker releated with the path, its using following steps:

@@ -1,0 +1,5 @@
+package httpmitm
+
+const (
+	DefaultLeaddingSpace = "        "
+)
