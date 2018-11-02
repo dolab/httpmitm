@@ -1,6 +1,6 @@
 # httpmitm
 
-[![Build Status](https://travis-ci.org/dolab/httpmitm.svg?branch=master)](https://travis-ci.org/dolab/httpmitm)
+[![CircleCI](https://circleci.com/gh/dolab/httpmitm.svg?style=svg)](https://circleci.com/gh/dolab/httpmitm)
 
 HTTP mock framework for golang.
 
