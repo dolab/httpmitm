@@ -14,10 +14,10 @@ jobs:
   allow_failures:
     - go: master
   include:
-    - stage: go1.6
-      go: 1.6
-      script:
-        - go test -v -race
+    # - stage: go1.6
+    #   go: 1.6
+    #   script:
+    #     - go test -v -race
 
     - stage: 1.7
       go: 1.7
