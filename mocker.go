@@ -84,12 +84,12 @@ func (m *Mocker) IsTimesUnlimited() bool {
 }
 
 func (m *Mocker) IsTimesExceed() bool {
+	m.mux.RLock()
+	defer m.mux.RUnlock()
+
 	if m.IsTimesUnlimited() {
 		return false
 	}
-
-	m.mux.RLock()
-	defer m.mux.RUnlock()
 
 	return m.invokedTimes > m.expectedTimes
 }

@@ -89,6 +89,27 @@ func Test_MitmTransport(t *testing.T) {
 	assertion.Nil(response)
 }
 
+func Test_MitmTransportWithMultiple(t *testing.T) {
+	assertion := assert.New(t)
+
+	mt := NewMitmTransport().StubDefaultTransport(t)
+	defer mt.UnstubDefaultTransport()
+
+	// first, it should work
+	mt.MockRequest("GET", mockURL).WithResponse(200, nil, "GET OK")
+
+	response, err := http.Get(stubURL)
+	assertion.Nil(err)
+	assertion.Equal(200, response.StatusCode)
+
+	// seconde, it should response with 404
+	mt.MockRequest("GET", mockURL).WithResponse(404, nil, "Not Found")
+
+	response, err = http.Get(stubURL)
+	assertion.Nil(err)
+	assertion.Equal(404, response.StatusCode)
+}
+
 func Test_MitmTransportWithoutResponder(t *testing.T) {
 	assertion := assert.New(t)
 

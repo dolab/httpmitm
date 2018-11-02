@@ -19,8 +19,8 @@ type Responder struct {
 	code   int
 	header http.Header
 	body   Testdataer
-	err    error
 	callee func(r *http.Request) (code int, header http.Header, reader io.Reader, err error)
+	err    error
 }
 
 // NewResponder returns Responder with provided data
@@ -91,6 +91,7 @@ func (r *Responder) Write(method string, urlobj *url.URL, data []byte) error {
 	return r.body.Write(key, data)
 }
 
+// RoundTrip implements http.RoundTripper
 func (r *Responder) RoundTrip(req *http.Request) (*http.Response, error) {
 	// is there an error?
 	if r.err != nil {
@@ -154,6 +155,7 @@ func (r *Responder) RoundTrip(req *http.Request) (*http.Response, error) {
 // NotFoundResponder represents a connection with 404 reponse.
 type NotFoundResponder struct{}
 
+// NewNotFoundResponder creates NotFoundResponder with http.StatusNotFound response
 func NewNotFoundResponder() *NotFoundResponder {
 	return &NotFoundResponder{}
 }
