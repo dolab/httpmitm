@@ -4,10 +4,9 @@ import (
 	"bytes"
 	"encoding/json"
 	"encoding/xml"
+	"errors"
 	"io"
-	"io/ioutil"
 	"net/url"
-	"strings"
 )
 
 type Testdataer interface {
@@ -48,10 +47,10 @@ func (td *Testdata) Read(key string) (data []byte, err error) {
 	}
 
 	if td.reader != nil {
-		data, err = ioutil.ReadAll(td.reader)
+		data, err = io.ReadAll(td.reader)
 
 		// NOTE: reset reader for internal!
-		td.reader = ioutil.NopCloser(bytes.NewReader(data))
+		td.reader = io.NopCloser(bytes.NewBuffer(data))
 	} else {
 		err = io.EOF
 	}
@@ -75,31 +74,28 @@ func NewTestdataFromIface(v interface{}) (td *Testdata, err error) {
 		reader io.Reader
 	)
 
-	switch v.(type) {
+	switch t := v.(type) {
 	case Testdataer:
-		tder, _ = v.(Testdataer)
+		tder = t
 
 	case io.Reader:
-		reader, _ = v.(io.Reader)
+		var data []byte
+		data, err = io.ReadAll(t)
+		if err == nil {
+			reader = bytes.NewBuffer(data)
+		}
 
 	case url.Values:
-		params, _ := v.(url.Values)
-
-		reader = strings.NewReader(params.Encode())
+		reader = bytes.NewBuffer([]byte(t.Encode()))
 
 	case string:
-		s, _ := v.(string)
-
-		reader = strings.NewReader(s)
+		reader = bytes.NewBuffer([]byte(t))
 
 	case []byte:
-		b, _ := v.([]byte)
-
-		reader = bytes.NewReader(b)
+		reader = bytes.NewBuffer(t)
 
 	default:
-		err = ErrUnsupport
-
+		err = ErrUnsupported
 	}
 
 	if err != nil {
@@ -116,7 +112,7 @@ func NewTestdataFromIface(v interface{}) (td *Testdata, err error) {
 
 func NewJsonTestdataFromIface(v interface{}) (td *Testdata, err error) {
 	td, err = NewTestdataFromIface(v)
-	if err == ErrUnsupport {
+	if errors.Is(err, ErrUnsupported) {
 		var buf []byte
 
 		buf, err = json.Marshal(v)
@@ -130,7 +126,7 @@ func NewJsonTestdataFromIface(v interface{}) (td *Testdata, err error) {
 
 func NewXmlTestdataFromIface(v interface{}) (td *Testdata, err error) {
 	td, err = NewTestdataFromIface(v)
-	if err == ErrUnsupport {
+	if errors.Is(err, ErrUnsupported) {
 		var buf []byte
 
 		buf, err = xml.Marshal(v)

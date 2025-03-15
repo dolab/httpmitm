@@ -4,8 +4,13 @@
 *.so
 
 # Folders
+.glide
+.vscode
 _obj
 _test
+bin
+pkg
+src
 
 # Architecture specific extensions/prefixes
 *.[568vq]
@@ -18,11 +23,10 @@ _cgo_gotypes.go
 _cgo_export.*
 
 _testmain.go
-
+*.dll
 *.exe
 *.test
 *.prof
 
-bin
-pkg
-src
+# IDE
+.idea

@@ -3,7 +3,6 @@ package httpmitm
 import (
 	"encoding/xml"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"strconv"
 	"strings"
@@ -13,7 +12,7 @@ import (
 )
 
 func Test_NewResponder(t *testing.T) {
-	assertion := assert.New(t)
+	it := assert.New(t)
 	code := 200
 	header := http.Header{
 		"Content-Type": []string{"text/plain"},
@@ -23,23 +22,23 @@ func Test_NewResponder(t *testing.T) {
 	rawurl := mockURL
 
 	responder := NewResponder(code, header, body)
-	assertion.Implements((*http.RoundTripper)(nil), responder)
+	it.Implements((*http.RoundTripper)(nil), responder)
 
 	request, _ := http.NewRequest("GET", rawurl, nil)
 	response, err := responder.RoundTrip(request)
-	assertion.Nil(err)
-	assertion.Equal(code, response.StatusCode)
-	assertion.Equal(strconv.Itoa(len(body)), response.Header.Get("Content-Length"))
-	assertion.NotNil(response.Request)
+	it.Nil(err)
+	it.Equal(code, response.StatusCode)
+	it.Equal(strconv.Itoa(len(body)), response.Header.Get("Content-Length"))
+	it.NotNil(response.Request)
 
-	b, err := ioutil.ReadAll(response.Body)
+	b, err := io.ReadAll(response.Body)
 	response.Body.Close()
-	assertion.Nil(err)
-	assertion.Equal(body, string(b))
+	it.Nil(err)
+	it.Equal(body, string(b))
 }
 
 func Test_NewResponderWithSuppliedContentLength(t *testing.T) {
-	assertion := assert.New(t)
+	it := assert.New(t)
 	code := 200
 	header := http.Header{
 		"Content-Type":   []string{"text/plain"},
@@ -53,15 +52,15 @@ func Test_NewResponderWithSuppliedContentLength(t *testing.T) {
 	request, _ := http.NewRequest("GET", rawurl, nil)
 
 	response, _ := responder.RoundTrip(request)
-	assertion.Equal("1024", response.Header.Get("Content-Length"))
+	it.Equal("1024", response.Header.Get("Content-Length"))
 
-	b, _ := ioutil.ReadAll(response.Body)
+	b, _ := io.ReadAll(response.Body)
 	response.Body.Close()
-	assertion.NotEqual(1024, len(b))
+	it.NotEqual(1024, len(b))
 }
 
 func Test_NewResponderWithError(t *testing.T) {
-	assertion := assert.New(t)
+	it := assert.New(t)
 	code := 200
 	header := http.Header{
 		"Content-Type": []string{"text/plain"},
@@ -76,12 +75,12 @@ func Test_NewResponderWithError(t *testing.T) {
 	request, _ := http.NewRequest("GET", rawurl, nil)
 
 	response, err := responder.RoundTrip(request)
-	assertion.EqualError(ErrUnsupport, err.Error())
-	assertion.Nil(response)
+	it.EqualError(ErrUnsupported, err.Error())
+	it.Nil(response)
 }
 
 func Test_NewJsonResponder(t *testing.T) {
-	assertion := assert.New(t)
+	it := assert.New(t)
 	code := 200
 	header := http.Header{
 		"Content-Type": []string{"text/plain"},
@@ -97,18 +96,18 @@ func Test_NewJsonResponder(t *testing.T) {
 
 	request, _ := http.NewRequest("GET", rawurl, nil)
 	response, err := responder.RoundTrip(request)
-	assertion.Nil(err)
-	assertion.Equal(code, response.StatusCode)
-	assertion.Equal("application/json", response.Header.Get("Content-Type"))
-	assertion.Equal(strconv.Itoa(len(rawbody)), response.Header.Get("Content-Length"))
+	it.Nil(err)
+	it.Equal(code, response.StatusCode)
+	it.Equal("application/json", response.Header.Get("Content-Type"))
+	it.Equal(strconv.Itoa(len(rawbody)), response.Header.Get("Content-Length"))
 
-	b, _ := ioutil.ReadAll(response.Body)
+	b, _ := io.ReadAll(response.Body)
 	response.Body.Close()
-	assertion.Equal(rawbody, string(b))
+	it.Equal(rawbody, string(b))
 }
 
 func Test_NewJsonResponderWithError(t *testing.T) {
-	assertion := assert.New(t)
+	it := assert.New(t)
 	code := 200
 	header := http.Header{
 		"Content-Type": []string{"text/plain"},
@@ -123,12 +122,12 @@ func Test_NewJsonResponderWithError(t *testing.T) {
 
 	request, _ := http.NewRequest("GET", rawurl, nil)
 	response, err := responder.RoundTrip(request)
-	assertion.NotNil(err)
-	assertion.Nil(response)
+	it.NotNil(err)
+	it.Nil(response)
 }
 
 func Test_NewXmlResponder(t *testing.T) {
-	assertion := assert.New(t)
+	it := assert.New(t)
 	code := 200
 	header := http.Header{
 		"Content-Type": []string{"text/plain"},
@@ -151,18 +150,18 @@ func Test_NewXmlResponder(t *testing.T) {
 
 	request, _ := http.NewRequest("GET", rawurl, nil)
 	response, err := responder.RoundTrip(request)
-	assertion.Nil(err)
-	assertion.Equal(code, response.StatusCode)
-	assertion.Equal("text/xml", response.Header.Get("Content-Type"))
-	assertion.Equal(strconv.Itoa(len(rawbody)), response.Header.Get("Content-Length"))
+	it.Nil(err)
+	it.Equal(code, response.StatusCode)
+	it.Equal("text/xml", response.Header.Get("Content-Type"))
+	it.Equal(strconv.Itoa(len(rawbody)), response.Header.Get("Content-Length"))
 
-	b, _ := ioutil.ReadAll(response.Body)
+	b, _ := io.ReadAll(response.Body)
 	response.Body.Close()
-	assertion.Equal(rawbody, string(b))
+	it.Equal(rawbody, string(b))
 }
 
 func Test_NewXmlResponderWithError(t *testing.T) {
-	assertion := assert.New(t)
+	it := assert.New(t)
 	code := 200
 	header := http.Header{
 		"Content-Type": []string{"text/plain"},
@@ -184,12 +183,12 @@ func Test_NewXmlResponderWithError(t *testing.T) {
 
 	request, _ := http.NewRequest("GET", rawurl, nil)
 	response, err := responder.RoundTrip(request)
-	assertion.NotNil(err)
-	assertion.Nil(response)
+	it.NotNil(err)
+	it.Nil(response)
 }
 
 func Test_NewCalleeResponder(t *testing.T) {
-	assertion := assert.New(t)
+	it := assert.New(t)
 	code := 200
 	header := http.Header{
 		"Content-Type": []string{"text/plain"},
@@ -204,17 +203,17 @@ func Test_NewCalleeResponder(t *testing.T) {
 
 	request, _ := http.NewRequest("GET", rawurl, nil)
 	response, err := responder.RoundTrip(request)
-	assertion.Nil(err)
-	assertion.Equal(code, response.StatusCode)
-	assertion.Equal(header, response.Header)
+	it.Nil(err)
+	it.Equal(code, response.StatusCode)
+	it.Equal(header, response.Header)
 
-	b, _ := ioutil.ReadAll(response.Body)
+	b, _ := io.ReadAll(response.Body)
 	response.Body.Close()
-	assertion.Equal(body, string(b))
+	it.Equal(body, string(b))
 }
 
 func Test_NewCalleeResponderWithError(t *testing.T) {
-	assertion := assert.New(t)
+	it := assert.New(t)
 	code := 200
 	header := http.Header{
 		"Content-Type": []string{"text/plain"},
@@ -224,11 +223,11 @@ func Test_NewCalleeResponderWithError(t *testing.T) {
 	rawurl := mockURL
 
 	responder := NewCalleeResponder(func(r *http.Request) (int, http.Header, io.Reader, error) {
-		return code, header, strings.NewReader(body), ErrUnsupport
+		return code, header, strings.NewReader(body), ErrUnsupported
 	})
 
 	request, _ := http.NewRequest("GET", rawurl, nil)
 	response, err := responder.RoundTrip(request)
-	assertion.EqualError(ErrUnsupport, err.Error())
-	assertion.Nil(response)
+	it.EqualError(ErrUnsupported, err.Error())
+	it.Nil(response)
 }

@@ -12,7 +12,7 @@ var (
 	TimeoutResponser  = NewResponser(NewTimeoutResponder(), MockWildcard, MockUnlimitedTimes)
 )
 
-// Responser is an container of mocks for the same method and domain
+// Responser is a container of mocks for the same method and domain
 type Responser struct {
 	mux sync.RWMutex
 
@@ -61,7 +61,7 @@ func (r *Responser) Mocks() map[string]*Mocker {
 	return r.mocks
 }
 
-// SetMatcherByRawURL changes request matcher of mocker releated with given rawurl's path
+// SetMatcherByRawURL changes request matcher of mocker related with given rawurl's path
 func (r *Responser) SetMatcherByRawURL(rawurl string, matcher RequestMatcher) {
 	mocker := r.FindByRawURL(rawurl)
 	if mocker == nil {
@@ -71,7 +71,7 @@ func (r *Responser) SetMatcherByRawURL(rawurl string, matcher RequestMatcher) {
 	mocker.SetMatcher(matcher)
 }
 
-// SetExpectedTimesByRawURL changes expected times of mocker releated with given rawurl's path
+// SetExpectedTimesByRawURL changes expected times of mocker related with given rawurl's path
 func (r *Responser) SetExpectedTimesByRawURL(rawurl string, expected int) {
 	mocker := r.FindByRawURL(rawurl)
 	if mocker == nil {
@@ -81,10 +81,12 @@ func (r *Responser) SetExpectedTimesByRawURL(rawurl string, expected int) {
 	mocker.SetExpectedTimes(expected)
 }
 
-// Find resolves mocker releated with the path, its using following steps:
-// 	1, try path, e.g. /user
-// 	2, try /, known as root path
-// 	3, try wildcard, e.g. *
+// Find resolves mocker related with the path, it's using following steps:
+//
+//	1, try path, e.g. /user
+//	2, try /, known as root path
+//	3, try wildcard, e.g. *
+//
 // NOTE: It returns mocker of the root path default if exists
 func (r *Responser) Find(urlpath string) *Mocker {
 	r.mux.RLock()
