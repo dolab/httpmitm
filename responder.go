@@ -3,7 +3,6 @@ package httpmitm
 import (
 	"bytes"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -14,7 +13,7 @@ var (
 )
 
 // Responder defines response of mocked request
-// NOTE: Responder implements http.RoundTripper for invokation chainning.
+// NOTE: Responder implements http.RoundTripper for invocation chaining.
 type Responder struct {
 	code   int
 	header http.Header
@@ -81,7 +80,7 @@ func NewXmlResponder(code int, header http.Header, body interface{}) http.RoundT
 func NewCalleeResponder(callee func(r *http.Request) (code int, header http.Header, body io.Reader, err error)) http.RoundTripper {
 	return &Responder{
 		callee: callee,
-		body:   NewTestdata(bytes.NewReader([]byte{})),
+		body:   NewTestdata(bytes.NewBuffer(nil)),
 	}
 }
 
@@ -139,7 +138,7 @@ func (r *Responder) RoundTrip(req *http.Request) (*http.Response, error) {
 		Status:     strconv.Itoa(r.code),
 		StatusCode: r.code,
 		Header:     r.header,
-		Body:       ioutil.NopCloser(bytes.NewReader(data)),
+		Body:       io.NopCloser(bytes.NewReader(data)),
 		Request:    req,
 	}
 
@@ -152,7 +151,7 @@ func (r *Responder) RoundTrip(req *http.Request) (*http.Response, error) {
 	return response, nil
 }
 
-// NotFoundResponder represents a connection with 404 reponse.
+// NotFoundResponder represents a connection with 404 response.
 type NotFoundResponder struct{}
 
 // NewNotFoundResponder creates NotFoundResponder with http.StatusNotFound response

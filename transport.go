@@ -5,7 +5,6 @@ import (
 	"compress/gzip"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"net/url"
 	"path/filepath"
@@ -13,20 +12,21 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 )
 
 // MitmTransport implements http.RoundTripper, which hijacks http request issued by an http.Client with mitm scheme.
-// It defferrs to the registered responders instead of making a real http request.
+// It deferred to the registered responders instead of making a real http request.
 type MitmTransport struct {
 	mux sync.Mutex
 
 	testing *testing.T
 
 	stubs   map[string]*Responser // responders registered for MITM request
-	stubbed bool                  // indicate whether http.DefaultTransport stubbed?
-	paused  bool                  // indicate whether current mocked transport paused?
-	mocked  bool                  // indicate whether current chain finished?
+	stubbed atomic.Bool           // indicate whether http.DefaultTransport stubbed?
+	paused  atomic.Bool           // indicate whether current mocked transport paused?
+	mocked  atomic.Bool           // indicate whether current chain finished?
 
 	lastMockedMethod  string
 	lastMockedURL     string
@@ -38,9 +38,6 @@ type MitmTransport struct {
 func NewMitmTransport() *MitmTransport {
 	return &MitmTransport{
 		stubs:             make(map[string]*Responser),
-		stubbed:           false,
-		paused:            false,
-		mocked:            false,
 		lastMockedMethod:  "",
 		lastMockedURL:     "",
 		lastMockedMatcher: DefaultMatcher,
@@ -50,14 +47,9 @@ func NewMitmTransport() *MitmTransport {
 
 // StubDefaultTransport stubs http.DefaultTransport with MitmTransport.
 func (mitm *MitmTransport) StubDefaultTransport(t *testing.T) *MitmTransport {
-	mitm.mux.Lock()
-	defer mitm.mux.Unlock()
-
 	mitm.testing = t
 
-	if !mitm.stubbed {
-		mitm.stubbed = true
-
+	if !mitm.stubbed.Swap(true) {
 		http.DefaultTransport = mitm
 	}
 
@@ -69,15 +61,14 @@ func (mitm *MitmTransport) UnstubDefaultTransport() {
 	mitm.mux.Lock()
 	defer mitm.mux.Unlock()
 
-	if mitm.stubbed {
-		mitm.stubbed = false
-
+	if mitm.stubbed.Swap(false) {
 		http.DefaultTransport = httpDefaultResponder
 	}
 
 	// is times missing match?
-	if !mitm.paused {
-		errlogs := []string{}
+	if !mitm.paused.Load() {
+		var errlogs []string
+
 		for key, stubs := range mitm.stubs {
 			for path, mocker := range stubs.Mocks() {
 				if mocker.IsTimesExceed() {
@@ -91,8 +82,7 @@ func (mitm *MitmTransport) UnstubDefaultTransport() {
 
 		if len(errlogs) > 0 {
 			pcs := make([]uintptr, 20)
-			max := runtime.Callers(2, pcs)
-			frames := runtime.CallersFrames(pcs[:max])
+			frames := runtime.CallersFrames(pcs[:runtime.Callers(2, pcs)])
 
 			var (
 				frame runtime.Frame
@@ -139,7 +129,7 @@ func (mitm *MitmTransport) MockRequest(method, rawurl string) *MitmTransport {
 	}
 
 	// adjust empty responder with RefusedResponser for prev un-finished mocks
-	if mitm.mocked == false && mitm.lastMockedMethod != "" && mitm.lastMockedURL != "" {
+	if !mitm.mocked.Load() && mitm.lastMockedMethod != "" && mitm.lastMockedURL != "" {
 		lastKey, _ := mitm.calcRequestKey(mitm.lastMockedMethod, mitm.lastMockedURL)
 		if lastKey == key {
 			return mitm
@@ -150,7 +140,7 @@ func (mitm *MitmTransport) MockRequest(method, rawurl string) *MitmTransport {
 		}
 	}
 
-	mitm.mocked = false
+	mitm.mocked.Store(false)
 	mitm.lastMockedMethod = method
 	mitm.lastMockedURL = rawurl
 	mitm.lastMockedMatcher = DefaultMatcher
@@ -225,7 +215,7 @@ func (mitm *MitmTransport) WithResponser(responder http.RoundTripper) *MitmTrans
 
 	mitm.stubs[key].SetMatcherByRawURL(mitm.lastMockedURL, mitm.lastMockedMatcher)
 
-	mitm.mocked = true
+	mitm.mocked.Store(true)
 
 	return mitm
 }
@@ -268,7 +258,7 @@ func (mitm *MitmTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	}
 
 	// direct connection for paused
-	if mitm.paused {
+	if mitm.paused.Load() {
 		// adjust request url scheme
 		r.URL.Scheme = mocker.Scheme()
 
@@ -294,7 +284,7 @@ func (mitm *MitmTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 				return resp, gzipErr
 			}
 
-			data, err = ioutil.ReadAll(gzipReader)
+			data, err = io.ReadAll(gzipReader)
 			if err != nil {
 				return resp, err
 			}
@@ -305,7 +295,7 @@ func (mitm *MitmTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 			resp.Header.Set("Content-Length", strconv.FormatInt(int64(len(data)), 10))
 
 		default:
-			data, err = ioutil.ReadAll(resp.Body)
+			data, err = io.ReadAll(resp.Body)
 			if err != nil {
 				return resp, err
 			}
@@ -314,7 +304,7 @@ func (mitm *MitmTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 		}
 
 		// rewrite response body for client
-		resp.Body = ioutil.NopCloser(bytes.NewReader(data))
+		resp.Body = io.NopCloser(bytes.NewBuffer(data))
 
 		// invoke testdata writer
 		if werr := responder.Write(r.Method, r.URL, data); werr != nil {
@@ -329,6 +319,7 @@ func (mitm *MitmTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	return mocker.RoundTrip(r)
 }
 
+// CancelRequest close request mocked
 // TODO: what's behavior of request timeout?
 func (mitm *MitmTransport) CancelRequest(r *http.Request) {
 
@@ -336,23 +327,19 @@ func (mitm *MitmTransport) CancelRequest(r *http.Request) {
 
 // Pause pauses all stubs of all requests
 func (mitm *MitmTransport) Pause() {
-	mitm.mux.Lock()
-	if mitm.stubbed {
-		mitm.paused = true
+	if mitm.stubbed.Load() {
+		mitm.paused.Store(true)
 	}
-	mitm.mux.Unlock()
 }
 
 // Resume resumes all paused stubs of all requests
 func (mitm *MitmTransport) Resume() {
-	mitm.mux.Lock()
-	if mitm.stubbed {
-		mitm.paused = false
+	if mitm.stubbed.Load() {
+		mitm.paused.Store(false)
 	}
-	mitm.mux.Unlock()
 }
 
-// PrettyPrint dumps MitmTransport in well foramt.
+// PrettyPrint dumps MitmTransport in well format.
 func (mitm *MitmTransport) PrettyPrint() {
 	buf := bytes.NewBuffer(nil)
 	buf.WriteString("stubs<map[string]&httpmitm.Responder>{\n")
